@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🎓 UniTrack
 
-## Getting Started
+> A modern, beautifully designed Progressive Web App (PWA) to track college attendance, manage daily schedules, and ensure you never fall below your target percentage.
 
-First, run the development server:
+**Live Demo:** [unitrack.dev](https://unitrack.dev)
+
+---
+
+## ✨ Features
+
+* **📱 Progressive Web App (PWA):** Fully installable on iOS and Android home screens for a native app experience.
+* **📊 Smart Attendance Math:** Custom algorithms track your theory and lab attendance, visually displaying how many classes you can afford to miss (or need to attend) to hit your target.
+* **🎨 Premium UI/UX:** Designed with a sleek dark mode, animated SVG progress rings, and seamless skeleton loading states for zero perceived latency.
+* **🗓️ Bulletproof Timetable:** A custom daily schedule builder featuring strict time-range validation and overlap prevention logic.
+* **🔐 Secure Authentication:** Passwordless or email-based login powered by Supabase, strictly locking user data behind Row Level Security (RLS) policies.
+
+---
+
+## 🛠️ Tech Stack
+
+**Frontend:**
+* [Next.js (App Router)](https://nextjs.org/) - React framework
+* [Tailwind CSS](https://tailwindcss.com/) - Utility-first styling
+* Custom SVG Animations & Skeleton Loaders
+
+**Backend & Database:**
+* [Supabase](https://supabase.com/) - Open-source Firebase alternative
+* PostgreSQL - Relational database
+* Row Level Security (RLS) - Data privacy
+
+**Deployment & Routing:**
+* [Vercel](https://vercel.com/) - Edge network hosting
+* Custom `.dev` domain routing with enforced HTTPS
+
+---
+
+## 🚀 Running Locally
+
+Want to run this project on your own machine? Just copy and run this single block in your terminal to set everything up:
 
 ```bash
+# 1. Clone the repository and navigate into it
+git clone [https://github.com/satyam-edu/UniTrack.git](https://github.com/satyam-edu/UniTrack.git)
+cd UniTrack
+
+# 2. Install dependencies
+npm install
+
+# 3. Create the environment file (Replace the dummy values with your actual Supabase keys after running this)
+echo "NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url" > .env.local
+echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key" >> .env.local
+echo "SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key" >> .env.local
+
+# 4. Start the development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+After running this, open http://localhost:3000 in your browser to see the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### AUTHOR
+Satyam & Shreyansh
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+GitHub: https://github.com/satyam-edu
+        https://github.com/shreyansh0714
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+LinkedIn: www.linkedin.com/in/satyam-in
+          www.linkedin.com/in/shreyansh-jain-56b673263
