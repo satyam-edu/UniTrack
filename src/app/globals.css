@@ -1,20 +1,59 @@
 @import "tailwindcss";
 
+/* ── Light mode (default) ─────────────────────────────────────────────── */
 :root {
-  --background: #0f0f13;
-  --foreground: #e8e8ed;
-  --card-bg: #1a1a24;
-  --card-border: #2a2a3a;
-  --input-bg: #12121a;
-  --input-border: #2a2a3a;
-  --input-focus: #6c5ce7;
-  --accent: #6c5ce7;
-  --accent-hover: #7d6ff0;
-  --accent-glow: rgba(108, 92, 231, 0.25);
-  --danger: #ff6b6b;
-  --success: #51cf66;
-  --text-muted: #8888a0;
-  --text-secondary: #b0b0c8;
+  /* Page & surface */
+  --background: #eaf1f5;
+  --background-end: #dce8ef;
+  --foreground: #0d1b2a;
+  --card-bg: rgba(255, 255, 255, 0.82);
+  --card-border: rgba(255, 255, 255, 0.55);
+
+  /* Form controls */
+  --input-bg: rgba(255, 255, 255, 0.70);
+  --input-border: rgba(26, 158, 160, 0.25);
+  --input-focus: #1a9ea0;
+
+  /* Coastal teal accent */
+  --accent: #1a9ea0;
+  --accent-hover: #158a8c;
+  --accent-glow: rgba(26, 158, 160, 0.22);
+
+  /* Semantic */
+  --danger: #e05c6e;
+  --success: #22c87a;
+
+  /* Typography helpers */
+  --text-muted: #7a93a8;
+  --text-secondary: #4a6478;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────────── */
+.dark {
+  /* Page & surface */
+  --background: #0a0f1c;
+  --background-end: #0d1829;
+  --foreground: #e0eaf2;
+  --card-bg: rgba(15, 28, 46, 0.75);
+  --card-border: rgba(26, 158, 160, 0.18);
+
+  /* Form controls */
+  --input-bg: rgba(10, 20, 36, 0.80);
+  --input-border: rgba(26, 158, 160, 0.30);
+  --input-focus: #22b5b8;
+
+  /* Coastal teal accent — slightly brighter for dark surfaces */
+  --accent: #22b5b8;
+  --accent-hover: #1a9ea0;
+  --accent-glow: rgba(34, 181, 184, 0.28);
+
+  /* Semantic */
+  --danger: #ff6b7a;
+  --success: #2ecc82;
+
+  /* Typography helpers */
+  --text-muted: #5a7a92;
+  --text-secondary: #8aadc4;
 }
 
 @theme inline {
@@ -37,7 +76,19 @@
 }
 
 body {
-  background: var(--background);
+  /* Soft gradient foundation for glassmorphism cards to sit on top of */
+  background:
+    radial-gradient(
+      ellipse 120% 80% at 60% -10%,
+      rgba(26, 158, 160, 0.12) 0%,
+      transparent 60%
+    ),
+    linear-gradient(
+      160deg,
+      var(--background) 0%,
+      var(--background-end) 100%
+    );
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }

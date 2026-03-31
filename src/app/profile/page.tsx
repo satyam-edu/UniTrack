@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import OnboardingModal from '@/components/OnboardingModal'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface UserProfile {
   id: string
@@ -22,14 +25,284 @@ interface UserProfile {
   lab_mode: string | null
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function initials(name: string) {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
+}
+
+function modeLabel(mode: string | null) {
+  return mode === 'hour' ? 'Per Hour' : 'Per Class'
+}
+
+// ─── Glass card style ─────────────────────────────────────────────────────────
+
+const glassCard: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.80)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  border: '1px solid rgba(255,255,255,0.60)',
+  boxShadow: '0 4px 20px rgba(0,0,0,0.05), 0 1px 0 rgba(255,255,255,0.9) inset',
+}
+
+// ─── Edit Profile Modal ───────────────────────────────────────────────────────
+
+function EditProfileModal({
+  user,
+  onClose,
+  onSaved,
+}: {
+  user: UserProfile
+  onClose: () => void
+  onSaved: (updated: Partial<UserProfile>) => void
+}) {
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    name: user.name || '',
+    email: user.email || '',
+    enrollment_no: user.enrollment_no || '',
+    branch: user.branch || '',
+    college: user.college || '',
+    batch: user.batch || '',
+    mobile_no: user.mobile_no || '',
+  })
+
+  // Lock scroll + Escape key
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => { document.body.style.overflow = ''; window.removeEventListener('keydown', onKey) }
+  }, [onClose])
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          enrollment_no: form.enrollment_no.trim(),
+          branch: form.branch.trim(),
+          college: form.college.trim(),
+          batch: form.batch.trim(),
+          mobile_no: form.mobile_no.trim(),
+        })
+        .eq('id', user.id)
+
+      if (updateError) throw updateError
+      onSaved({ ...form })
+      onClose()
+    } catch (err: any) {
+      setError(err.message || 'Failed to update profile.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(10,15,28,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 12 }}
+        transition={{ type: 'spring' as const, damping: 26, stiffness: 280 }}
+        className="w-full max-w-md rounded-3xl overflow-hidden"
+        style={{
+          background: 'rgba(255,255,255,0.92)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          border: '1px solid rgba(255,255,255,0.70)',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.18)',
+        }}
+      >
+        <div className="px-6 pt-5 pb-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xl font-bold tracking-tight text-foreground">Edit Profile</h2>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-text-muted hover:text-foreground cursor-pointer transition-colors"
+              style={{ background: 'rgba(26,158,160,0.08)' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-xl px-4 py-3 text-sm text-danger" style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.20)' }}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Name */}
+            <div>
+              <label className="block text-xs font-semibold text-text-muted mb-1.5">Full Name</label>
+              <input name="name" value={form.name} onChange={handleChange} required placeholder="e.g. Satyam Sharma"
+                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-xs font-semibold text-text-muted mb-1.5">Email</label>
+              <input name="email" type="email" value={form.email} onChange={handleChange} required placeholder="e.g. satyam@university.edu"
+                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+            </div>
+
+            {/* Enrollment + Branch */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-text-muted mb-1.5">Enrollment No</label>
+                <input name="enrollment_no" value={form.enrollment_no} onChange={handleChange} placeholder="2023BTCS001"
+                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-text-muted mb-1.5">Branch</label>
+                <input name="branch" value={form.branch} onChange={handleChange} placeholder="CSE"
+                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+              </div>
+            </div>
+
+            {/* College + Batch */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-text-muted mb-1.5">College</label>
+                <input name="college" value={form.college} onChange={handleChange} placeholder="NIT Kurukshetra"
+                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-text-muted mb-1.5">Batch</label>
+                <input name="batch" value={form.batch} onChange={handleChange} placeholder="2023-27"
+                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+              </div>
+            </div>
+
+            {/* Mobile */}
+            <div>
+              <label className="block text-xs font-semibold text-text-muted mb-1.5">Mobile No</label>
+              <input name="mobile_no" type="tel" value={form.mobile_no} onChange={handleChange} placeholder="+91 98765 43210"
+                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+            </div>
+
+            {/* Actions */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button type="button" onClick={onClose}
+                className="py-3 rounded-xl text-sm font-semibold text-text-secondary cursor-pointer transition-colors"
+                style={{ background: 'rgba(26,158,160,0.06)', border: '1px solid rgba(26,158,160,0.15)' }}
+              >
+                Cancel
+              </button>
+              <motion.button type="submit" disabled={loading} whileTap={{ scale: 0.96 }}
+                className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.35)' }}
+              >
+                {loading ? 'Saving…' : 'Save Changes'}
+              </motion.button>
+            </div>
+          </form>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// ─── Row item inside a glass card ─────────────────────────────────────────────
+
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | null | undefined }) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-3.5">
+      <div
+        className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{ background: 'rgba(26,158,160,0.10)' }}
+      >
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-bold tracking-wider text-text-muted uppercase">{label}</p>
+        <p className="text-sm font-semibold text-foreground truncate mt-0.5">{value || '—'}</p>
+      </div>
+    </div>
+  )
+}
+
+// ─── SVG Icons ───────────────────────────────────────────────────────────────
+
+const Icon = {
+  Target: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+    </svg>
+  ),
+  Book: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+    </svg>
+  ),
+  Flask: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 2v7.5L4 20h16L15 9.5V2"/><line x1="9" y1="2" x2="15" y2="2"/>
+    </svg>
+  ),
+  Id: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/>
+    </svg>
+  ),
+  Mail: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+    </svg>
+  ),
+  GradCap: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+    </svg>
+  ),
+  Building: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+  ),
+  Calendar: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  ),
+  Phone: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 8.91A16 16 0 0 0 15 15.91l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+    </svg>
+  ),
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function ProfilePage() {
   const router = useRouter()
   const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [loggingOut, setLoggingOut] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showEditProfile, setShowEditProfile] = useState(false)
 
-  // Settings edit state
+  // Attendance settings
   const [editingSettings, setEditingSettings] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm, setSettingsForm] = useState({
@@ -38,41 +311,29 @@ export default function ProfilePage() {
     lab_mode: 'class',
   })
 
+  // ── Load ──────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     async function loadProfile() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
+      const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
 
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', session.user.id)
-        .single()
-
+      const { data, error } = await supabase.from('users').select('*').eq('id', session.user.id).single()
       if (error || !data) return
 
       setUser(data)
-
-      // Check if onboarding is needed
-      if (data.target_attendance === null || data.target_attendance === undefined) {
-        setShowOnboarding(true)
-      }
-
-      // Pre-fill settings form
+      if (data.target_attendance === null || data.target_attendance === undefined) setShowOnboarding(true)
       setSettingsForm({
         target_attendance: data.target_attendance?.toString() || '75',
         theory_mode: data.theory_mode || 'class',
         lab_mode: data.lab_mode || 'class',
       })
-
       setLoading(false)
     }
-
     loadProfile()
   }, [])
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   async function handleLogout() {
     setLoggingOut(true)
@@ -84,49 +345,33 @@ export default function ProfilePage() {
     e.preventDefault()
     if (!user) return
     setSavingSettings(true)
-
     const target = parseInt(settingsForm.target_attendance, 10)
-    const { error } = await supabase
-      .from('users')
-      .update({
-        target_attendance: target,
-        theory_mode: settingsForm.theory_mode,
-        lab_mode: settingsForm.lab_mode,
-      })
-      .eq('id', user.id)
+    const { error } = await supabase.from('users').update({
+      target_attendance: target,
+      theory_mode: settingsForm.theory_mode,
+      lab_mode: settingsForm.lab_mode,
+    }).eq('id', user.id)
 
     if (!error) {
-      setUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              target_attendance: target,
-              theory_mode: settingsForm.theory_mode,
-              lab_mode: settingsForm.lab_mode,
-            }
-          : prev
-      )
+      setUser((prev) => prev ? { ...prev, target_attendance: target, theory_mode: settingsForm.theory_mode, lab_mode: settingsForm.lab_mode } : prev)
       setEditingSettings(false)
     }
     setSavingSettings(false)
   }
 
-  function handleOnboardingComplete() {
-    setShowOnboarding(false)
-    // Reload to get updated user data
-    window.location.reload()
+  function handleProfileSaved(updated: Partial<UserProfile>) {
+    setUser((prev) => prev ? { ...prev, ...updated } : prev)
   }
+
+  // ── Loading ───────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
       <ProtectedRoute>
         <main className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
-            <svg className="animate-spin h-8 w-8 text-accent" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <p className="text-text-muted text-sm">Loading your profile…</p>
+            <div className="w-10 h-10 rounded-full border-2 border-accent/20 border-t-accent animate-spin" />
+            <p className="text-sm text-text-muted">Loading profile…</p>
           </div>
         </main>
         <BottomNav />
@@ -136,59 +381,94 @@ export default function ProfilePage() {
 
   if (!user) return null
 
-  const profileFields = [
-    { label: 'Enrollment No', value: user.enrollment_no, icon: '🆔' },
-    { label: 'Email', value: user.email, icon: '✉️' },
-    { label: 'Branch', value: user.branch, icon: '🎓' },
-    { label: 'College', value: user.college, icon: '🏛️' },
-    { label: 'Batch', value: user.batch, icon: '📅' },
-    { label: 'Mobile', value: user.mobile_no, icon: '📱' },
-  ]
-
-  const modeLabel = (mode: string | null) =>
-    mode === 'hour' ? 'Per Hour' : 'Per Class'
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <ProtectedRoute>
-      {/* Onboarding Modal for new users */}
+      {/* Onboarding */}
       {showOnboarding && (
-        <OnboardingModal userId={user.id} onComplete={handleOnboardingComplete} />
+        <OnboardingModal userId={user.id} onComplete={() => { setShowOnboarding(false); window.location.reload() }} />
       )}
 
-      <main className="flex-1 flex flex-col px-4 py-6 pb-24 max-w-lg mx-auto w-full">
-        {/* Top bar */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold tracking-tight">Profile</h1>
-        </div>
+      {/* Edit Profile Modal */}
+      <AnimatePresence>
+        {showEditProfile && (
+          <EditProfileModal
+            user={user}
+            onClose={() => setShowEditProfile(false)}
+            onSaved={handleProfileSaved}
+          />
+        )}
+      </AnimatePresence>
 
-        {/* User Info Section */}
-        <div className="bg-card-bg border border-card-border rounded-2xl p-6 flex flex-col items-center text-center shadow-lg shadow-black/20 mb-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-accent/5 to-transparent pointer-events-none" />
-          <div className="w-24 h-24 rounded-full bg-accent/15 flex items-center justify-center text-4xl font-bold text-accent mb-4 shadow-inner ring-4 ring-background z-10">
-            {user.name
-              .split(' ')
-              .map((n) => n[0])
-              .join('')
-              .toUpperCase()
-              .slice(0, 2)}
+      <motion.main
+        initial={{ opacity: 0, y: 28 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] }}
+        className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
+      >
+
+        {/* ── Header title ───────────────────────────────────────────────── */}
+        <h1 className="text-3xl font-extrabold tracking-tight text-foreground mb-6">Profile</h1>
+
+        {/* ── 1. Profile Hero Card ───────────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.06, type: 'spring' as const, damping: 26, stiffness: 210 }}
+          className="relative rounded-3xl overflow-hidden mb-4 shadow-xl"
+          style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 55%, #0a6b70 100%)' }}
+        >
+          {/* Gloss overlay */}
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.02) 60%, transparent 100%)' }} />
+          {/* Blob */}
+          <div className="absolute -right-12 -top-12 w-48 h-48 rounded-full pointer-events-none" style={{ background: 'rgba(255,255,255,0.07)', filter: 'blur(24px)' }} />
+
+          <div className="relative p-6 flex flex-col items-center text-center">
+            {/* Avatar circle */}
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-extrabold mb-4"
+              style={{ background: 'rgba(255,255,255,0.22)', border: '2.5px solid rgba(255,255,255,0.45)', color: 'white', backdropFilter: 'blur(8px)' }}
+            >
+              {initials(user.name)}
+            </div>
+
+            <h2 className="text-2xl font-extrabold text-white leading-tight">{user.name}</h2>
+            <p className="text-white/70 text-sm font-medium mt-0.5">{user.email}</p>
+
+            {/* Enrollment/Branch pill */}
+            <div
+              className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold text-white/90"
+              style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.30)' }}
+            >
+              <span>{user.enrollment_no || '—'}</span>
+              {user.branch && <><span className="opacity-50">·</span><span>{user.branch}</span></>}
+              {user.batch  && <><span className="opacity-50">·</span><span>{user.batch}</span></>}
+            </div>
+
+            {/* Joined */}
+            <p className="mt-3 text-[11px] text-white/50 font-medium">
+              Joined {new Date(user.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
           </div>
-          <h2 className="text-xl font-bold z-10">{user.name}</h2>
-          <p className="text-text-secondary font-medium mt-0.5 z-10">{user.email}</p>
-          <span className="inline-block mt-3 text-xs font-semibold bg-accent/10 text-accent px-4 py-1.5 rounded-full border border-accent/20 z-10">
-            {user.enrollment_no} • {user.branch} • {user.batch}
-          </span>
-        </div>
+        </motion.div>
 
-        {/* Attendance Settings Card */}
-        <div className="bg-card-bg border border-card-border rounded-2xl overflow-hidden shadow-lg shadow-black/20 mb-4">
-          <div className="px-6 py-4 border-b border-card-border flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
-              Attendance Settings
-            </h3>
+        {/* ── 2. Attendance Settings Card ────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.14, type: 'spring' as const, damping: 26, stiffness: 210 }}
+          className="rounded-3xl overflow-hidden mb-4"
+          style={glassCard}
+        >
+          {/* Section header */}
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(26,158,160,0.10)' }}>
+            <h3 className="text-xs font-bold tracking-widest text-text-muted uppercase">Attendance Settings</h3>
             {!editingSettings && (
               <button
                 onClick={() => setEditingSettings(true)}
-                className="text-xs text-accent font-medium hover:text-accent-hover cursor-pointer"
+                className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-colors"
+                style={{ background: 'rgba(26,158,160,0.10)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
               >
                 Edit
               </button>
@@ -197,32 +477,28 @@ export default function ProfilePage() {
 
           {editingSettings ? (
             <form onSubmit={handleSaveSettings} className="p-5 space-y-4">
+              {/* Target */}
               <div>
-                <label className="block text-xs text-text-muted mb-1.5">Target Attendance (%)</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1.5">Target Attendance (%)</label>
                 <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  required
+                  type="number" min="1" max="100" required
                   value={settingsForm.target_attendance}
                   onChange={(e) => setSettingsForm((f) => ({ ...f, target_attendance: e.target.value }))}
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-2.5 text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent"
                 />
               </div>
 
+              {/* Theory mode */}
               <div>
-                <label className="block text-xs text-text-muted mb-1.5">Theory Mode</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1.5">Theory Mode</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['class', 'hour'].map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setSettingsForm((f) => ({ ...f, theory_mode: mode }))}
-                      className={`py-2 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
-                        settingsForm.theory_mode === mode
-                          ? 'bg-accent/15 border-accent text-accent'
-                          : 'bg-input-bg border-input-border text-text-muted hover:border-text-muted'
-                      }`}
+                  {(['class', 'hour'] as const).map((mode) => (
+                    <button key={mode} type="button" onClick={() => setSettingsForm((f) => ({ ...f, theory_mode: mode }))}
+                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all"
+                      style={settingsForm.theory_mode === mode
+                        ? { background: 'rgba(26,158,160,0.15)', border: '1.5px solid #1a9ea0', color: '#1a9ea0' }
+                        : { background: 'transparent', borderColor: 'rgba(26,158,160,0.20)', color: '#7a93a8' }
+                      }
                     >
                       {mode === 'class' ? 'Per Class' : 'Per Hour'}
                     </button>
@@ -230,19 +506,17 @@ export default function ProfilePage() {
                 </div>
               </div>
 
+              {/* Lab mode */}
               <div>
-                <label className="block text-xs text-text-muted mb-1.5">Lab Mode</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1.5">Lab Mode</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['class', 'hour'].map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setSettingsForm((f) => ({ ...f, lab_mode: mode }))}
-                      className={`py-2 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
-                        settingsForm.lab_mode === mode
-                          ? 'bg-accent/15 border-accent text-accent'
-                          : 'bg-input-bg border-input-border text-text-muted hover:border-text-muted'
-                      }`}
+                  {(['class', 'hour'] as const).map((mode) => (
+                    <button key={mode} type="button" onClick={() => setSettingsForm((f) => ({ ...f, lab_mode: mode }))}
+                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all"
+                      style={settingsForm.lab_mode === mode
+                        ? { background: 'rgba(26,158,160,0.15)', border: '1.5px solid #1a9ea0', color: '#1a9ea0' }
+                        : { background: 'transparent', borderColor: 'rgba(26,158,160,0.20)', color: '#7a93a8' }
+                      }
                     >
                       {mode === 'class' ? 'Per Class' : 'Per Hour'}
                     </button>
@@ -250,79 +524,84 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={savingSettings}
-                  className="flex-1 bg-accent hover:bg-accent-hover text-white text-sm font-semibold py-2.5 rounded-xl disabled:opacity-50 cursor-pointer"
-                >
-                  {savingSettings ? 'Saving…' : 'Save'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditingSettings(false)}
-                  className="flex-1 bg-input-bg border border-input-border text-text-secondary text-sm font-semibold py-2.5 rounded-xl hover:border-text-muted cursor-pointer"
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button type="button" onClick={() => setEditingSettings(false)}
+                  className="py-3 rounded-xl text-sm font-semibold cursor-pointer"
+                  style={{ background: 'rgba(26,158,160,0.06)', border: '1px solid rgba(26,158,160,0.15)', color: '#7a93a8' }}
                 >
                   Cancel
                 </button>
+                <motion.button type="submit" disabled={savingSettings} whileTap={{ scale: 0.96 }}
+                  className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg, #1a9ea0, #0d7c80)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}
+                >
+                  {savingSettings ? 'Saving…' : 'Save'}
+                </motion.button>
               </div>
             </form>
           ) : (
-            <div className="divide-y divide-card-border">
-              <div className="flex items-center gap-3 px-6 py-4">
-                <span className="text-lg">🎯</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-text-muted">Target Attendance</p>
-                  <p className="text-sm font-medium">{user.target_attendance ?? '—'}%</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 px-6 py-4">
-                <span className="text-lg">📖</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-text-muted">Theory Mode</p>
-                  <p className="text-sm font-medium">{modeLabel(user.theory_mode)}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 px-6 py-4">
-                <span className="text-lg">🔬</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-text-muted">Lab Mode</p>
-                  <p className="text-sm font-medium">{modeLabel(user.lab_mode)}</p>
-                </div>
-              </div>
+            <div style={{ borderTop: 'none' }}>
+              <InfoRow icon={<Icon.Target />} label="Target Attendance" value={user.target_attendance != null ? `${user.target_attendance}%` : null} />
+              <div style={{ height: '1px', background: 'rgba(26,158,160,0.07)', margin: '0 20px' }} />
+              <InfoRow icon={<Icon.Book />} label="Theory Mode" value={modeLabel(user.theory_mode)} />
+              <div style={{ height: '1px', background: 'rgba(26,158,160,0.07)', margin: '0 20px' }} />
+              <InfoRow icon={<Icon.Flask />} label="Lab Mode" value={modeLabel(user.lab_mode)} />
             </div>
           )}
-        </div>
+        </motion.div>
 
-
-        {/* Details card */}
-        <div className="bg-card-bg border border-card-border rounded-2xl overflow-hidden shadow-lg shadow-black/20">
-          <div className="px-6 py-4 border-b border-card-border">
-            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
-              Details
-            </h3>
+        {/* ── 3. Personal Details Card ───────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22, type: 'spring' as const, damping: 26, stiffness: 210 }}
+          className="rounded-3xl overflow-hidden mb-6"
+          style={glassCard}
+        >
+          {/* Section header */}
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(26,158,160,0.10)' }}>
+            <h3 className="text-xs font-bold tracking-widest text-text-muted uppercase">Personal Details</h3>
+            <motion.button
+              whileTap={{ scale: 0.92 }}
+              onClick={() => setShowEditProfile(true)}
+              className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-colors"
+              style={{ background: 'rgba(26,158,160,0.10)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
+            >
+              Edit
+            </motion.button>
           </div>
 
-          <div className="divide-y divide-card-border">
-            {profileFields.map((field) => (
-              <div key={field.label} className="flex items-center gap-3 px-6 py-4">
-                <span className="text-lg">{field.icon}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-text-muted">{field.label}</p>
-                  <p className="text-sm font-medium truncate">
-                    {field.value || '—'}
-                  </p>
-                </div>
+          <div>
+            {[
+              { icon: <Icon.Id />,       label: 'Enrollment No', value: user.enrollment_no },
+              { icon: <Icon.Mail />,     label: 'Email',         value: user.email },
+              { icon: <Icon.GradCap />,  label: 'Branch',        value: user.branch },
+              { icon: <Icon.Building />, label: 'College',       value: user.college },
+              { icon: <Icon.Calendar />, label: 'Batch',         value: user.batch },
+              { icon: <Icon.Phone />,    label: 'Mobile',        value: user.mobile_no },
+            ].map(({ icon, label, value }, i, arr) => (
+              <div key={label}>
+                <InfoRow icon={icon} label={label} value={value} />
+                {i < arr.length - 1 && <div style={{ height: '1px', background: 'rgba(26,158,160,0.07)', margin: '0 20px' }} />}
               </div>
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        {/* Primary Logout Button */}
-        <button
+        {/* ── Logout ─────────────────────────────────────────────────────── */}
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.30 }}
+          whileTap={{ scale: 0.98 }}
           onClick={handleLogout}
           disabled={loggingOut}
-          className="mt-8 w-full bg-danger/10 hover:bg-danger text-danger hover:text-white font-bold py-4 rounded-xl transition-all shadow-sm shadow-danger/5 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 border border-danger/20 hover:border-danger"
+          className="w-full flex items-center justify-center gap-2.5 font-bold py-4 rounded-2xl cursor-pointer disabled:opacity-50 transition-all"
+          style={{
+            background: 'rgba(220,38,38,0.08)',
+            border: '1.5px solid rgba(220,38,38,0.20)',
+            color: '#dc2626',
+          }}
         >
           {loggingOut ? (
             <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
@@ -330,25 +609,16 @@ export default function ProfilePage() {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
           )}
-          <span>{loggingOut ? 'Signing out...' : 'Log Out'}</span>
-        </button>
+          <span>{loggingOut ? 'Signing out…' : 'Log Out'}</span>
+        </motion.button>
+      </motion.main>
 
-        {/* Joined date */}
-        <p className="text-center text-xs text-text-muted mt-6">
-          Joined{' '}
-          {new Date(user.created_at).toLocaleDateString('en-IN', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          })}
-        </p>
-      </main>
       <BottomNav />
     </ProtectedRoute>
   )
