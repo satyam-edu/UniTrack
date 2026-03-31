@@ -2,9 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import AddClassModal from '@/components/AddClassModal'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TimetableSlot {
   id: string
@@ -20,38 +24,53 @@ interface TimetableSlot {
   }
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const DAYS = [
+  { full: 'Monday',    short: 'Mon' },
+  { full: 'Tuesday',   short: 'Tue' },
+  { full: 'Wednesday', short: 'Wed' },
+  { full: 'Thursday',  short: 'Thu' },
+  { full: 'Friday',    short: 'Fri' },
+  { full: 'Saturday',  short: 'Sat' },
+]
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatTime(timeStr: string) {
+  return new Date(`1970-01-01T${timeStr}`).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function TimetablePage() {
   const [schedule, setSchedule] = useState<Record<string, TimetableSlot[]>>({})
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string>('Monday')
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
-  const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  // ── Data loading ─────────────────────────────────────────────────────────────
 
   const loadTimetable = useCallback(async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
+    const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
 
     const { data, error } = await supabase
       .from('timetable')
       .select('id, subject_id, day_of_week, start_time, end_time, room_location, subject:subjects(subject_name, subject_code, type)')
       .eq('user_id', session.user.id)
-      .order('start_time', { ascending: true }) // Initial sort by time
+      .order('start_time', { ascending: true })
 
-    if (error || !data) {
-      setLoading(false)
-      return
-    }
+    if (error || !data) { setLoading(false); return }
 
-    // Group by day of week
     const grouped: Record<string, TimetableSlot[]> = {}
     data.forEach((slot: any) => {
-      if (!grouped[slot.day_of_week]) {
-        grouped[slot.day_of_week] = []
-      }
+      if (!grouped[slot.day_of_week]) grouped[slot.day_of_week] = []
       grouped[slot.day_of_week].push(slot as TimetableSlot)
     })
 
@@ -59,23 +78,20 @@ export default function TimetablePage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => {
-    loadTimetable()
-  }, [loadTimetable])
+  useEffect(() => { loadTimetable() }, [loadTimetable])
+
+  // ── Delete ───────────────────────────────────────────────────────────────────
 
   async function handleDelete(id: string) {
-    if (!confirm('Are you sure you want to delete this class slot?')) return
-
+    if (!confirm('Delete this class slot?')) return
     setDeletingId(id)
     const { error } = await supabase.from('timetable').delete().eq('id', id)
-    
     if (!error) {
-      // Find the day and remove the slot locally
       setSchedule((prev) => {
         const next = { ...prev }
         for (const day of Object.keys(next)) {
           next[day] = next[day].filter((s) => s.id !== id)
-          if (next[day].length === 0) delete next[day] // Cleanup empty days
+          if (next[day].length === 0) delete next[day]
         }
         return next
       })
@@ -83,156 +99,291 @@ export default function TimetablePage() {
     setDeletingId(null)
   }
 
-  function formatTime(timeStr: string) {
-    return new Date(`1970-01-01T${timeStr}`).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-  }
+  // ── Loading state ─────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <main className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <svg className="animate-spin h-8 w-8 text-accent" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          <p className="text-text-muted text-sm">Loading timetable…</p>
-        </div>
+      <ProtectedRoute>
+        <main className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 rounded-full border-2 border-accent/20 border-t-accent animate-spin" />
+            <p className="text-sm text-text-muted">Loading timetable…</p>
+          </div>
+        </main>
         <BottomNav />
-      </main>
+      </ProtectedRoute>
     )
   }
 
-  const hasSlots = Object.keys(schedule).length > 0
-  const renderedDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  const slotsForDay = schedule[selectedDay] ?? []
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <ProtectedRoute>
-      <main className="flex-1 flex flex-col px-4 py-6 pb-24 max-w-lg mx-auto w-full">
+      <motion.main
+        initial={{ opacity: 0, y: 28 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] as [number,number,number,number] }}
+        className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
+      >
+
+        {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold tracking-tight">Timetable</h1>
-          <Link
-            href="/timetable/add"
-            className="bg-accent hover:bg-accent-hover text-white text-sm font-semibold px-4 py-2 rounded-xl shadow-lg shadow-accent-glow flex items-center gap-2"
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Timetable</h1>
+          <motion.button
+            whileTap={{ scale: 0.93 }}
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer transition-colors shadow-lg"
+            style={{
+              background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+              boxShadow: '0 4px 14px rgba(26,158,160,0.40)',
+            }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Add
-          </Link>
+            Add Class
+          </motion.button>
         </div>
 
-        {/* Horizontal Day Selector */}
-        <div className="flex overflow-x-auto gap-2 pb-2 mb-4 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
-          {renderedDays.map((day) => (
-            <button
-              key={day}
-              onClick={() => setSelectedDay(day)}
-              className={`whitespace-nowrap px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex-[0_0_auto] ${
-                selectedDay === day
-                  ? 'bg-accent text-white shadow-lg shadow-accent-glow'
-                  : 'bg-card-bg border border-card-border text-text-secondary hover:text-foreground'
-              }`}
+        {/* ── Day Selector ───────────────────────────────────────────────────── */}
+        <div
+          className="flex items-center gap-1 mb-6 p-1.5 rounded-2xl overflow-x-auto scrollbar-hide"
+          style={{
+            background: 'rgba(255,255,255,0.60)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255,255,255,0.55)',
+            boxShadow: '0 2px 12px rgba(26,158,160,0.08)',
+          }}
+        >
+          {DAYS.map(({ full, short }) => {
+            const isActive = selectedDay === full
+            const hasSlots = (schedule[full]?.length ?? 0) > 0
+
+            return (
+              <button
+                key={full}
+                onClick={() => setSelectedDay(full)}
+                className="relative flex-1 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap min-w-[44px] flex flex-col items-center gap-0.5"
+                style={{ color: isActive ? '#fff' : '#7a93a8' }}
+              >
+                {/* Animated pill background */}
+                {isActive && (
+                  <motion.div
+                    layoutId="activeDay"
+                    className="absolute inset-0 rounded-xl"
+                    style={{
+                      background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+                      boxShadow: '0 4px 12px rgba(26,158,160,0.38)',
+                    }}
+                    transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                  />
+                )}
+                <span className="relative z-10 text-xs font-bold">{short}</span>
+                {/* Dot indicator for days with classes */}
+                {hasSlots && !isActive && (
+                  <span className="relative z-10 w-1 h-1 rounded-full" style={{ background: '#1a9ea0' }} />
+                )}
+                {hasSlots && isActive && (
+                  <span className="relative z-10 w-1 h-1 rounded-full bg-white/60" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ── Timeline + Cards ──────────────────────────────────────────────── */}
+        <AnimatePresence mode="wait">
+          {slotsForDay.length === 0 ? (
+            <motion.div
+              key={`empty-${selectedDay}`}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25 }}
+              className="flex flex-col items-center justify-center py-16 rounded-3xl mt-4"
+              style={{
+                background: 'rgba(255,255,255,0.55)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1.5px dashed rgba(26,158,160,0.25)',
+              }}
             >
-              {day}
-            </button>
-          ))}
-        </div>
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+                style={{ background: 'rgba(26,158,160,0.10)' }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-accent">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </div>
+              <p className="font-semibold text-foreground mb-1">No classes on {selectedDay}</p>
+              <p className="text-sm text-text-muted">Tap "+ Add Class" to schedule one.</p>
+            </motion.div>
+          ) : (
+            <motion.div
+              key={`slots-${selectedDay}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="relative"
+            >
+              {/* Vertical timeline line */}
+              <div
+                className="absolute left-[9px] top-3 bottom-3 w-px"
+                style={{
+                  background: 'linear-gradient(to bottom, rgba(26,158,160,0.50), rgba(26,158,160,0.10))',
+                }}
+              />
 
-        {!hasSlots && schedule[selectedDay] === undefined ? (
-          <div className="bg-card-bg border border-card-border rounded-2xl p-8 text-center shadow-lg shadow-black/20 mt-10">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-accent/10 mb-3">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-            </div>
-            <h3 className="font-semibold mb-1">Your timetable is empty for this day</h3>
-            <p className="text-text-muted text-sm mb-4">
-              Add class slots to map out your weekly schedule.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="space-y-3 mt-4">
-              {!schedule[selectedDay] || schedule[selectedDay].length === 0 ? (
-                <div className="text-center py-10 bg-card-bg/50 border border-card-border/50 rounded-2xl border-dashed">
-                  <p className="text-text-muted">No classes scheduled for {selectedDay}.</p>
-                </div>
-              ) : (
-                schedule[selectedDay].map((slot) => (
-                  <div
+              <div className="space-y-4">
+                {slotsForDay.map((slot, i) => (
+                  <motion.div
                     key={slot.id}
-                    className="bg-card-bg border border-card-border rounded-2xl p-4 shadow-lg shadow-black/20 flex items-stretch gap-4"
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      delay: i * 0.08,
+                      type: 'spring' as const,
+                      damping: 26,
+                      stiffness: 220,
+                    }}
+                    className="flex gap-4 items-start"
                   >
-                    {/* Time Pillar */}
-                    <div className="flex flex-col items-center justify-center min-w-[80px] pr-4 border-r border-card-border/50 text-center">
-                      <span className="text-sm font-bold block">{formatTime(slot.start_time)}</span>
-                      <span className="text-[10px] text-text-muted my-0.5">to</span>
-                      <span className="text-sm font-medium text-text-secondary block">{formatTime(slot.end_time)}</span>
-                    </div>
-
-                    {/* Subject Info */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-center relative pr-8 pl-1">
-                      <h3 className="font-bold text-base truncate">{slot.subject.subject_name}</h3>
-                      <p className="text-xs font-semibold text-accent mt-0.5">
-                        {slot.subject.type}
-                      </p>
-                      
-                      {slot.room_location && (
-                        <p className="text-xs text-text-muted mt-1.5 flex items-center gap-1.5">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                            <circle cx="12" cy="10" r="3" />
-                          </svg>
-                          <span className="truncate">{slot.room_location}</span>
-                        </p>
-                      )}
-
-                      {/* Actions */}
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-1.5">
-                        <Link
-                          href={`/timetable/${slot.id}/edit`}
-                          className="p-1.5 text-text-muted hover:text-accent bg-background/80 rounded-lg transition-colors border border-transparent hover:border-accent/30"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 20h9" />
-                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                          </svg>
-                        </Link>
-                        <button
-                          onClick={() => handleDelete(slot.id)}
-                          disabled={deletingId === slot.id}
-                          className="p-1.5 text-text-muted hover:text-danger bg-background/80 rounded-lg transition-colors border border-transparent hover:border-danger/30 disabled:opacity-50"
-                        >
-                          {deletingId === slot.id ? (
-                            <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                            </svg>
-                          ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <line x1="18" y1="6" x2="6" y2="18" />
-                              <line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                          )}
-                        </button>
+                    {/* Timeline dot */}
+                    <div className="flex-shrink-0 mt-3.5 z-10">
+                      <div
+                        className="w-[18px] h-[18px] rounded-full border-2 border-white flex items-center justify-center"
+                        style={{
+                          background: '#1a9ea0',
+                          boxShadow: '0 0 0 3px rgba(26,158,160,0.20)',
+                        }}
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </main>
+
+                    {/* Glass card */}
+                    <div
+                      className="flex-1 rounded-2xl overflow-hidden"
+                      style={{
+                        background: 'rgba(255,255,255,0.80)',
+                        backdropFilter: 'blur(20px)',
+                        WebkitBackdropFilter: 'blur(20px)',
+                        border: '1px solid rgba(255,255,255,0.60)',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.9) inset',
+                      }}
+                    >
+                      <div className="p-4 flex items-start justify-between gap-3">
+                        {/* Left: Subject info */}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-base text-foreground mb-1.5 truncate">
+                            {slot.subject.subject_name}
+                          </h3>
+
+                          {/* Badges row */}
+                          <div className="flex items-center gap-2 mb-2">
+                            <span
+                              className="text-xs font-bold px-2 py-0.5 rounded-md"
+                              style={{
+                                background: 'rgba(26,158,160,0.12)',
+                                color: '#1a9ea0',
+                                border: '1px solid rgba(26,158,160,0.20)',
+                              }}
+                            >
+                              {slot.subject.subject_code}
+                            </span>
+                            <span className="text-xs font-medium text-text-muted">
+                              {slot.subject.type}
+                            </span>
+                          </div>
+
+                          {/* Time */}
+                          <p className="text-sm font-medium text-text-secondary flex items-center gap-1.5">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60">
+                              <circle cx="12" cy="12" r="10" />
+                              <polyline points="12 6 12 12 16 14" />
+                            </svg>
+                            {formatTime(slot.start_time)} – {formatTime(slot.end_time)}
+                          </p>
+
+                          {/* Room location (optional) */}
+                          {slot.room_location && (
+                            <p className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                                <circle cx="12" cy="10" r="3" />
+                              </svg>
+                              <span className="truncate">{slot.room_location}</span>
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Right: Edit + Delete */}
+                        <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                          <Link
+                            href={`/timetable/${slot.id}/edit`}
+                            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors"
+                            style={{
+                              background: 'rgba(26,158,160,0.08)',
+                              color: '#1a9ea0',
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                            </svg>
+                          </Link>
+
+                          <motion.button
+                            whileTap={{ scale: 0.88 }}
+                            onClick={() => handleDelete(slot.id)}
+                            disabled={deletingId === slot.id}
+                            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                            style={{
+                              background: 'rgba(220,38,38,0.08)',
+                              color: '#dc2626',
+                            }}
+                          >
+                            {deletingId === slot.id ? (
+                              <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                              </svg>
+                            )}
+                          </motion.button>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.main>
+
       <BottomNav />
+
+      {isModalOpen && (
+        <AddClassModal
+          onClose={() => setIsModalOpen(false)}
+          onSuccess={() => { loadTimetable() }}
+          initialDay={selectedDay}
+        />
+      )}
     </ProtectedRoute>
   )
 }
