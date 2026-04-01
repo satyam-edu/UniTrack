@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import Link from 'next/link'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
@@ -27,14 +26,6 @@ interface Subject {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getHoursDiff(start: string, end: string) {
-  const d1 = new Date(`1970-01-01T${start}`)
-  const d2 = new Date(`1970-01-01T${end}`)
-  let diff = (d2.getTime() - d1.getTime()) / (1000 * 60 * 60)
-  if (diff <= 0) diff = 1
-  return diff
-}
 
 /** Pick a consistent pastel colour bucket for a subject's avatar */
 const AVATAR_PALETTES = [
@@ -92,21 +83,42 @@ function MiniRing({
           strokeDasharray={circ}
           strokeDashoffset={offset}
           strokeLinecap="round"
-          style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
+          style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1)' }}
         />
       </svg>
       <div className="flex flex-col items-center z-10">
         {noData
-          ? <span className="text-[10px] font-bold text-text-muted">–%</span>
+          ? <span className="text-[10px] font-bold text-text-muted">0%</span>
           : <span className="text-[11px] font-extrabold leading-none" style={{ color: stroke }}>
               {Math.round(safe)}%
             </span>
         }
-        {/* Red dot when 0% but has data */}
         {!noData && safe === 0 && (
           <span className="w-1.5 h-1.5 rounded-full bg-danger mt-0.5" />
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Skeleton card ────────────────────────────────────────────────────────────
+
+function SkeletonCard() {
+  return (
+    <div
+      className="rounded-2xl p-4 flex items-center gap-3 animate-pulse"
+      style={{
+        background: 'rgba(255,255,255,0.70)',
+        border: '1px solid rgba(255,255,255,0.55)',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+      }}
+    >
+      <div className="w-11 h-11 rounded-full flex-shrink-0" style={{ background: 'rgba(26,158,160,0.10)' }} />
+      <div className="flex-1 space-y-2">
+        <div className="h-3.5 rounded-full w-2/3" style={{ background: 'rgba(26,158,160,0.12)' }} />
+        <div className="h-2.5 rounded-full w-1/2" style={{ background: 'rgba(26,158,160,0.08)' }} />
+      </div>
+      <div className="w-[52px] h-[52px] rounded-full flex-shrink-0" style={{ background: 'rgba(26,158,160,0.08)' }} />
     </div>
   )
 }
@@ -117,72 +129,81 @@ export default function SubjectsPage() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [targetAttendance, setTargetAttendance] = useState<number>(75)
+  const [targetAttendance, setTargetAttendance] = useState<number>(75) // safe fallback
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [subjectToEdit, setSubjectToEdit] = useState<Subject | null>(null)
 
-  // ── Data ─────────────────────────────────────────────────────────────────────
+  // ── Fetch ───────────────────────────────────────────────────────────────────
 
   const loadSubjects = useCallback(async () => {
+    setLoading(true)
+    setErrorMsg(null)
+
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
+    if (!session) { setLoading(false); return }
+
     const userId = session.user.id
 
-    const { data: userData } = await supabase
+    // 1. Fetch user profile for target_attendance
+    const { data: profile } = await supabase
       .from('users')
-      .select('target_attendance, theory_mode, lab_mode')
+      .select('target_attendance')
       .eq('id', userId)
       .single()
 
-    if (userData?.target_attendance) setTargetAttendance(userData.target_attendance)
-    const theoryMode = userData?.theory_mode || 'class'
-    const labMode    = userData?.lab_mode    || 'class'
+    if (profile?.target_attendance) {
+      setTargetAttendance(profile.target_attendance)
+    }
 
-    const { data: rawSubjects, error: subjectsError } = await supabase
+    // 2. Fetch subjects
+    const { data: subjectsData, error: subjectsError } = await supabase
       .from('subjects')
-      .select('*')
+      .select('id, subject_name, subject_code, faculty_name, type')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: true })
 
-    if (subjectsError) { setErrorMsg(`Failed to load subjects: ${subjectsError.message}`); setLoading(false); return }
-    if (!rawSubjects || rawSubjects.length === 0) { setSubjects([]); setLoading(false); return }
+    if (subjectsError) {
+      setErrorMsg(subjectsError.message)
+      setLoading(false)
+      return
+    }
 
-    const { data: rawTimetable } = await supabase
-      .from('timetable').select('id, subject_id, start_time, end_time').eq('user_id', userId)
+    if (!subjectsData || subjectsData.length === 0) {
+      setSubjects([])
+      setLoading(false)
+      return
+    }
 
-    const { data: rawAttendance } = await supabase
-      .from('attendance').select('timetable_id, status').eq('user_id', userId)
+    // 3. Fetch attendance records for all subjects
+    const { data: attendance } = await supabase
+      .from('attendance')
+      .select('subject_id, status')
+      .eq('user_id', userId)
 
-    const computedSubjects = rawSubjects.map((subjectRow: any) => {
-      let attended = 0, total = 0
-      const mode = subjectRow.type === 'Theory' ? theoryMode : labMode
-      const slots = rawTimetable?.filter((t) => t.subject_id === subjectRow.id) || []
+    // 4. Compute per-subject stats
+    const enriched: Subject[] = subjectsData.map((sub) => {
+      const records = (attendance || []).filter(
+        (a: { subject_id: string; status: string }) => a.subject_id === sub.id
+      )
+      const present = records.filter((r: { status: string }) => r.status === 'Present').length
+      const absent  = records.filter((r: { status: string }) => r.status === 'Absent').length
+      const total   = present + absent // Cancelled doesn't count
+      const percentage = total > 0 ? (present / total) * 100 : 0
 
-      slots.forEach((slot: any) => {
-        const pv = mode === 'hour' ? getHoursDiff(slot.start_time, slot.end_time) : 1
-        const records = rawAttendance?.filter((a) => a.timetable_id === slot.id) || []
-        records.forEach((r: any) => {
-          if (r.status === 'Present')      { attended += pv; total += pv }
-          else if (r.status === 'Absent')  { total += pv }
-        })
-      })
-
-      const percentage = total > 0 ? (attended / total) * 100 : 0
       return {
-        ...subjectRow,
-        stats: {
-          attended: Number((attended || 0).toFixed(1).replace(/\.0$/, '')),
-          total:    Number((total    || 0).toFixed(1).replace(/\.0$/, '')),
-          percentage,
-        },
-      } as Subject
+        id: sub.id,
+        subject_name: sub.subject_name,
+        subject_code: sub.subject_code,
+        faculty_name: sub.faculty_name ?? '',
+        type: sub.type,
+        stats: { attended: present, total, percentage },
+      }
     })
 
-    setSubjects(computedSubjects)
-    setErrorMsg(null)
+    setSubjects(enriched)
     setLoading(false)
   }, [])
 
@@ -191,28 +212,20 @@ export default function SubjectsPage() {
   // ── Delete ───────────────────────────────────────────────────────────────────
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this subject? All timetable and attendance records will also be removed.')) return
+    if (!confirm('Delete this subject?')) return
     setDeletingId(id)
+
     const { error } = await supabase.from('subjects').delete().eq('id', id)
-    if (!error) setSubjects((prev) => prev.filter((s) => s.id !== id))
-    else alert('Failed to delete subject')
+
+    if (error) {
+      alert(`Failed to delete: ${error.message}`)
+      setDeletingId(null)
+      return
+    }
+
+    setSubjects((prev) => prev.filter((s) => s.id !== id))
+    if (expandedId === id) setExpandedId(null)
     setDeletingId(null)
-  }
-
-  // ── Loading ───────────────────────────────────────────────────────────────────
-
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 rounded-full border-2 border-accent/20 border-t-accent animate-spin" />
-            <p className="text-sm text-text-muted">Loading subjects…</p>
-          </div>
-        </main>
-        <BottomNav />
-      </ProtectedRoute>
-    )
   }
 
   // ── Derived counts ─────────────────────────────────────────────────────────
@@ -220,15 +233,53 @@ export default function SubjectsPage() {
   const theoryCount = subjects.filter((s) => s.type === 'Theory').length
   const labCount    = subjects.filter((s) => s.type === 'Lab').length
 
+  // ── Loading skeleton ───────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <main className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Subjects</h1>
+            <div
+              className="h-10 w-20 rounded-2xl animate-pulse"
+              style={{ background: 'rgba(26,158,160,0.15)' }}
+            />
+          </div>
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="rounded-2xl p-4 h-16 animate-pulse"
+                style={{
+                  background: 'rgba(255,255,255,0.70)',
+                  border: '1px solid rgba(255,255,255,0.55)',
+                }}
+              />
+            ))}
+          </div>
+          {/* Cards */}
+          <div className="space-y-3">
+            {[0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)}
+          </div>
+        </main>
+        <BottomNav />
+      </ProtectedRoute>
+    )
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <ProtectedRoute>
       <motion.main
-        initial={{ opacity: 0, y: 28 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] as [number,number,number,number] }}
+        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number,number,number,number] }}
         className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
+        style={{ willChange: 'opacity, transform' }}
       >
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6">
@@ -261,14 +312,12 @@ export default function SubjectsPage() {
               key={label}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06, type: 'spring' as const, damping: 26, stiffness: 220 }}
-              className="rounded-2xl p-4 flex flex-col items-center justify-center"
+              transition={{ delay: i * 0.06, type: 'spring' as const, damping: 25 }}
+              className="rounded-2xl p-4 flex flex-col items-center justify-center bg-white/[0.78] border border-white/60"
               style={{
-                background: 'rgba(255,255,255,0.78)',
                 backdropFilter: 'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
-                border: '1px solid rgba(255,255,255,0.60)',
-                boxShadow: '0 2px 12px rgba(26,158,160,0.07), 0 1px 0 rgba(255,255,255,0.9) inset',
+                boxShadow: '0 2px 12px rgba(26,158,160,0.07)',
               }}
             >
               <span className="text-2xl font-extrabold" style={{ color: '#1a9ea0' }}>{value}</span>
@@ -293,12 +342,10 @@ export default function SubjectsPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center justify-center py-16 rounded-3xl"
+            className="flex flex-col items-center justify-center py-16 rounded-3xl bg-white/55 border border-dashed border-teal-600/25"
             style={{
-              background: 'rgba(255,255,255,0.55)',
               backdropFilter: 'blur(16px)',
               WebkitBackdropFilter: 'blur(16px)',
-              border: '1.5px dashed rgba(26,158,160,0.25)',
             }}
           >
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4" style={{ background: 'rgba(26,158,160,0.10)' }}>
@@ -308,7 +355,7 @@ export default function SubjectsPage() {
               </svg>
             </div>
             <p className="font-semibold text-foreground mb-1">No subjects yet</p>
-            <p className="text-sm text-text-muted">Tap "+ Add" to create your first subject.</p>
+            <p className="text-sm text-text-muted">Tap &quot;+ Add&quot; to create your first subject.</p>
           </motion.div>
         )}
 
@@ -326,21 +373,20 @@ export default function SubjectsPage() {
               return (
                 <motion.div
                   key={subject.id}
-                  layout
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.08, type: 'spring' as const, damping: 26, stiffness: 210 }}
-                  className="rounded-2xl overflow-hidden cursor-pointer"
+                  transition={{ delay: i * 0.06, type: 'spring' as const, damping: 25 }}
+                  className="rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 active:scale-95 bg-white/80"
                   style={{
-                    background: 'rgba(255,255,255,0.80)',
                     backdropFilter: 'blur(20px)',
                     WebkitBackdropFilter: 'blur(20px)',
                     border: isExpanded
                       ? '1.5px solid rgba(26,158,160,0.35)'
                       : '1px solid rgba(255,255,255,0.60)',
                     boxShadow: isExpanded
-                      ? '0 8px 28px rgba(26,158,160,0.12), 0 1px 0 rgba(255,255,255,0.9) inset'
-                      : '0 2px 12px rgba(0,0,0,0.05), 0 1px 0 rgba(255,255,255,0.9) inset',
+                      ? '0 8px 28px rgba(26,158,160,0.12)'
+                      : '0 2px 12px rgba(0,0,0,0.05)',
+                    willChange: 'transform, opacity',
                   }}
                   onClick={() => setExpandedId(isExpanded ? null : subject.id)}
                 >
@@ -359,7 +405,7 @@ export default function SubjectsPage() {
                       <h3 className="font-bold text-base text-foreground leading-snug truncate">
                         {subject.subject_name}
                       </h3>
-                      <p className="text-xs text-text-muted mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <div className="text-xs text-text-muted mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <span>{subject.subject_code}</span>
                         <span className="opacity-40">·</span>
                         <span>{subject.type}</span>
@@ -375,7 +421,7 @@ export default function SubjectsPage() {
                             </div>
                           </>
                         )}
-                      </p>
+                      </div>
                     </div>
 
                     {/* Ring + chevron */}
@@ -405,13 +451,12 @@ export default function SubjectsPage() {
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        transition={{ type: 'spring' as const, damping: 30, stiffness: 260 }}
-                        style={{ overflow: 'hidden' }}
+                        transition={{ duration: 0.2 }}
+                        style={{ overflow: 'hidden', willChange: 'height, opacity' }}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div
-                          className="mx-4 mb-4 p-4 rounded-2xl space-y-3"
-                          style={{ background: 'rgba(26,158,160,0.05)', border: '1px solid rgba(26,158,160,0.12)' }}
+                          className="mx-4 mb-4 p-4 rounded-2xl space-y-3 bg-teal-500/[0.05] border border-teal-500/[0.12]"
                         >
                           {/* Attendance progress bar */}
                           <div>
@@ -426,7 +471,7 @@ export default function SubjectsPage() {
                               <motion.div
                                 initial={{ width: 0 }}
                                 animate={{ width: `${noData ? 0 : Math.min(100, percentage)}%` }}
-                                transition={{ duration: 0.6, ease: 'easeOut' }}
+                                transition={{ duration: 0.8, ease: 'easeOut' }}
                                 className="h-full rounded-full"
                                 style={{ background: noData ? '#94a3b8' : isHealthy ? '#16a34a' : '#dc2626' }}
                               />
@@ -500,7 +545,8 @@ export default function SubjectsPage() {
       {isModalOpen && (
         <AddSubjectModal
           onClose={() => setIsModalOpen(false)}
-          onSuccess={() => { loadSubjects() }}
+          onSuccess={() => { setIsModalOpen(false); loadSubjects() }}
+          existingSubjects={subjects}
         />
       )}
 
@@ -509,7 +555,8 @@ export default function SubjectsPage() {
           <EditSubjectModal
             subject={subjectToEdit}
             onClose={() => setIsEditModalOpen(false)}
-            onSuccess={() => { loadSubjects() }}
+            onSuccess={() => { setIsEditModalOpen(false); loadSubjects() }}
+            existingSubjects={subjects}
           />
         )}
       </AnimatePresence>

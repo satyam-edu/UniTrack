@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { motion } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 
 interface Subject {
@@ -19,7 +20,6 @@ const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sat
 interface Props {
   onClose: () => void
   onSuccess: () => void
-  /** Pre-select a day when opened from the day view. */
   initialDay?: string
 }
 
@@ -38,13 +38,11 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
     room_location: '',
   })
 
-  // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = '' }
   }, [])
 
-  // Escape to close
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -54,9 +52,7 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
   }, [onClose])
 
   const loadSubjects = useCallback(async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    const { data: { session } } = await supabase.auth.getSession()
 
     if (!session) {
       onClose()
@@ -96,9 +92,7 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
     setLoading(true)
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+      const { data: { session } } = await supabase.auth.getSession()
 
       if (!session) {
         onClose()
@@ -108,7 +102,6 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
       const newStart = `${form.start_time}:00`
       const newEnd = `${form.end_time}:00`
 
-      // Overlap check
       const { data: existingSlots, error: fetchError } = await supabase
         .from('timetable')
         .select('start_time, end_time')
@@ -148,27 +141,25 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
   }
 
   return (
-    /* Backdrop — always centered */
     <div
       ref={overlayRef}
       onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(10, 15, 28, 0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
     >
-      {/* Floating dialog */}
-      <div
-        className="w-full max-w-md bg-card-bg border border-card-border rounded-3xl shadow-2xl overflow-hidden"
-        style={{ animation: 'modalSlideUp 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className="w-full max-w-md bg-white/95 backdrop-blur-xl border border-white shadow-2xl text-slate-800 rounded-3xl overflow-hidden"
       >
-
         <div className="px-6 pt-4 pb-6 space-y-5">
-          {/* Header */}
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold tracking-tight">New Class</h2>
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">New Class</h2>
             <button
               onClick={onClose}
               aria-label="Close modal"
-              className="p-1.5 rounded-xl text-text-muted hover:text-foreground hover:bg-background/70 transition-colors"
+              className="p-1.5 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -177,7 +168,6 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
             </button>
           </div>
 
-          {/* Loading subjects */}
           {fetchingSubjects ? (
             <div className="flex justify-center py-8">
               <svg className="animate-spin h-7 w-7 text-accent" viewBox="0 0 24 24" fill="none">
@@ -186,7 +176,6 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
               </svg>
             </div>
           ) : subjects.length === 0 ? (
-            /* No subjects nudge */
             <div className="py-6 text-center space-y-3">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-accent/10 mb-1">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
@@ -195,7 +184,7 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                   <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
               </div>
-              <p className="text-sm text-text-muted">
+              <p className="text-sm text-slate-600">
                 You must add a subject before scheduling classes.
               </p>
               <button
@@ -206,18 +195,16 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
               </button>
             </div>
           ) : (
-            /* Error */
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="bg-danger/10 border border-danger/30 text-danger text-sm rounded-xl px-4 py-3">
+                <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
                   {error}
                 </div>
               )}
 
-              {/* Subject */}
               <div>
-                <label htmlFor="modal-subject_id" className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Subject <span className="text-danger">*</span>
+                <label htmlFor="modal-subject_id" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Subject <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="modal-subject_id"
@@ -225,20 +212,17 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                   required
                   value={form.subject_id}
                   onChange={handleChange}
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none cursor-pointer"
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
                 >
                   {subjects.map((sub) => (
-                    <option key={sub.id} value={sub.id}>
-                      {sub.subject_code} – {sub.subject_name}
-                    </option>
+                     <option key={sub.id} value={sub.id}>{sub.subject_code} – {sub.subject_name}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Day */}
               <div>
-                <label htmlFor="modal-day_of_week" className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Day <span className="text-danger">*</span>
+                <label htmlFor="modal-day_of_week" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Day <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="modal-day_of_week"
@@ -246,7 +230,7 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                   required
                   value={form.day_of_week}
                   onChange={handleChange}
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none cursor-pointer"
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
                 >
                   {daysOfWeek.map((day) => (
                     <option key={day} value={day}>{day}</option>
@@ -254,11 +238,10 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                 </select>
               </div>
 
-              {/* Time row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="modal-start_time" className="block text-sm font-medium text-text-secondary mb-1.5">
-                    Start <span className="text-danger">*</span>
+                  <label htmlFor="modal-start_time" className="block text-sm font-medium text-slate-600 mb-1.5">
+                    Start <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="modal-start_time"
@@ -267,12 +250,12 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                     required
                     value={form.start_time}
                     onChange={handleChange}
-                    className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none"
+                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all"
                   />
                 </div>
                 <div>
-                  <label htmlFor="modal-end_time" className="block text-sm font-medium text-text-secondary mb-1.5">
-                    End <span className="text-danger">*</span>
+                  <label htmlFor="modal-end_time" className="block text-sm font-medium text-slate-600 mb-1.5">
+                    End <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="modal-end_time"
@@ -281,16 +264,15 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                     required
                     value={form.end_time}
                     onChange={handleChange}
-                    className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none"
+                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all"
                   />
                 </div>
               </div>
 
-              {/* Room */}
               <div>
-                <label htmlFor="modal-room_location" className="block text-sm font-medium text-text-secondary mb-1.5 flex justify-between">
+                <label htmlFor="modal-room_location" className="block text-sm font-medium text-slate-600 mb-1.5 flex justify-between">
                   <span>Room / Location</span>
-                  <span className="text-text-muted text-xs">Optional</span>
+                  <span className="text-slate-400 text-xs">Optional</span>
                 </label>
                 <input
                   id="modal-room_location"
@@ -299,16 +281,15 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                   placeholder="e.g. Room 402, Block A"
                   value={form.room_location}
                   onChange={handleChange}
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
                 />
               </div>
 
-              {/* Actions */}
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="py-3 rounded-xl font-semibold text-sm bg-background border border-card-border text-text-secondary hover:text-foreground transition-colors cursor-pointer"
+                  className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -333,14 +314,7 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
             </form>
           )}
         </div>
-      </div>
-
-      <style>{`
-        @keyframes modalSlideUp {
-          from { opacity: 0; transform: translateY(24px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0)    scale(1);    }
-        }
-      `}</style>
+      </motion.div>
     </div>
   )
 }

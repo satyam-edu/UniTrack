@@ -1,14 +1,22 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { motion } from 'motion/react'
 import { supabase } from '@/lib/supabase'
+
+interface Subject {
+  id: string
+  subject_name: string
+  subject_code: string
+}
 
 interface Props {
   onClose: () => void
   onSuccess: () => void
+  existingSubjects: Subject[]
 }
 
-export default function AddSubjectModal({ onClose, onSuccess }: Props) {
+export default function AddSubjectModal({ onClose, onSuccess, existingSubjects }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -42,6 +50,17 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+
+    // Duplicate Check
+    const isDuplicate = existingSubjects.some(
+      (sub) => sub.subject_code.toLowerCase() === form.subject_code.trim().toLowerCase()
+    )
+
+    if (isDuplicate) {
+      setError('This subject code already exists!')
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -78,23 +97,24 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
     <div
       ref={overlayRef}
       onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(10, 15, 28, 0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
     >
-      {/* Floating dialog */}
-      <div
-        className="w-full max-w-md bg-card-bg border border-card-border rounded-3xl shadow-2xl overflow-hidden"
-        style={{ animation: 'modalSlideUp 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
+      {/* Floating dialog - Strict Light Glassmorphism */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className="w-full max-w-md bg-white/95 backdrop-blur-xl border border-white shadow-2xl text-slate-800 rounded-3xl overflow-hidden"
       >
-
         <div className="px-6 pt-4 pb-6 space-y-5">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold tracking-tight">New Subject</h2>
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">New Subject</h2>
             <button
               onClick={onClose}
               aria-label="Close modal"
-              className="p-1.5 rounded-xl text-text-muted hover:text-foreground hover:bg-background/70 transition-colors"
+              className="p-1.5 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -105,7 +125,7 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
 
           {/* Error */}
           {error && (
-            <div className="bg-danger/10 border border-danger/30 text-danger text-sm rounded-xl px-4 py-3">
+            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
               {error}
             </div>
           )}
@@ -113,8 +133,8 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="modal-subject_name" className="block text-sm font-medium text-text-secondary mb-1.5">
-                Subject Name <span className="text-danger">*</span>
+              <label htmlFor="modal-subject_name" className="block text-sm font-medium text-slate-600 mb-1.5">
+                Subject Name <span className="text-red-500">*</span>
               </label>
               <input
                 id="modal-subject_name"
@@ -125,14 +145,14 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
                 value={form.subject_name}
                 onChange={handleChange}
                 placeholder="e.g. Data Structures"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="modal-subject_code" className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Code <span className="text-danger">*</span>
+                <label htmlFor="modal-subject_code" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Code <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="modal-subject_code"
@@ -142,13 +162,20 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
                   value={form.subject_code}
                   onChange={handleChange}
                   placeholder="e.g. CS201"
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent ${
+                    error === 'This subject code already exists!' ? 'border-red-500 ring-red-500/20' : 'border-slate-200'
+                  }`}
                 />
+                {error === 'This subject code already exists!' && (
+                  <p className="text-red-500 text-xs mt-1 font-medium ml-1">
+                    {error}
+                  </p>
+                )}
               </div>
 
               <div>
-                <label htmlFor="modal-type" className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Type <span className="text-danger">*</span>
+                <label htmlFor="modal-type" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Type <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="modal-type"
@@ -156,7 +183,7 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
                   required
                   value={form.type}
                   onChange={handleChange}
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none cursor-pointer"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none cursor-pointer transition-all"
                 >
                   <option value="Theory">Theory</option>
                   <option value="Lab">Lab</option>
@@ -165,9 +192,9 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
             </div>
 
             <div>
-              <label htmlFor="modal-faculty_name" className="block text-sm font-medium text-text-secondary mb-1.5">
+              <label htmlFor="modal-faculty_name" className="block text-sm font-medium text-slate-600 mb-1.5">
                 Teacher
-                <span className="text-text-muted text-xs ml-2">Optional</span>
+                <span className="text-slate-400 text-xs ml-2">Optional</span>
               </label>
               <input
                 id="modal-faculty_name"
@@ -176,7 +203,7 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
                 value={form.faculty_name}
                 onChange={handleChange}
                 placeholder="e.g. Dr. Alan Turing"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               />
             </div>
 
@@ -185,7 +212,7 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
               <button
                 type="button"
                 onClick={onClose}
-                className="py-3 rounded-xl font-semibold text-sm bg-background border border-card-border text-text-secondary hover:text-foreground transition-colors cursor-pointer"
+                className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -193,6 +220,7 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
                 type="submit"
                 disabled={loading}
                 className="py-3 rounded-xl font-semibold text-sm bg-accent hover:bg-accent-hover text-white shadow-lg shadow-accent-glow disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}
               >
                 {loading ? (
                   <span className="inline-flex items-center justify-center gap-2">
@@ -209,14 +237,7 @@ export default function AddSubjectModal({ onClose, onSuccess }: Props) {
             </div>
           </form>
         </div>
-      </div>
-
-      <style>{`
-        @keyframes modalSlideUp {
-          from { opacity: 0; transform: translateY(24px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0)    scale(1);    }
-        }
-      `}</style>
+      </motion.div>
     </div>
   )
 }

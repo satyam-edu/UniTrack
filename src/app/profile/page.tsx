@@ -38,12 +38,12 @@ function modeLabel(mode: string | null) {
 // ─── Glass card style ─────────────────────────────────────────────────────────
 
 const glassCard: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.80)',
   backdropFilter: 'blur(20px)',
   WebkitBackdropFilter: 'blur(20px)',
-  border: '1px solid rgba(255,255,255,0.60)',
-  boxShadow: '0 4px 20px rgba(0,0,0,0.05), 0 1px 0 rgba(255,255,255,0.9) inset',
+  boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
 }
+
+const GLASS_CARD_CLASS = 'bg-white/80 border border-white/60'
 
 // ─── Edit Profile Modal ───────────────────────────────────────────────────────
 
@@ -120,23 +120,21 @@ function EditProfileModal({
         initial={{ opacity: 0, scale: 0.94, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 12 }}
-        transition={{ type: 'spring' as const, damping: 26, stiffness: 280 }}
-        className="w-full max-w-md rounded-3xl overflow-hidden"
+        transition={{ type: 'spring' as const, damping: 25, stiffness: 300 }}
+        className="w-full max-w-md rounded-3xl overflow-hidden bg-white/95 border border-white/70"
         style={{
-          background: 'rgba(255,255,255,0.92)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
-          border: '1px solid rgba(255,255,255,0.70)',
           boxShadow: '0 24px 60px rgba(0,0,0,0.18)',
         }}
       >
         <div className="px-6 pt-5 pb-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-bold tracking-tight text-foreground">Edit Profile</h2>
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">Edit Profile</h2>
             <button
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-xl text-text-muted hover:text-foreground cursor-pointer transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-900 cursor-pointer transition-colors"
               style={{ background: 'rgba(26,158,160,0.08)' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -154,51 +152,51 @@ function EditProfileModal({
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Name */}
             <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Full Name</label>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">Full Name</label>
               <input name="name" value={form.name} onChange={handleChange} required placeholder="e.g. Satyam Sharma"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
             </div>
 
             {/* Email */}
             <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Email</label>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">Email</label>
               <input name="email" type="email" value={form.email} onChange={handleChange} required placeholder="e.g. satyam@university.edu"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
             </div>
 
             {/* Enrollment + Branch */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1.5">Enrollment No</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Enrollment No</label>
                 <input name="enrollment_no" value={form.enrollment_no} onChange={handleChange} placeholder="2023BTCS001"
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1.5">Branch</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Branch</label>
                 <input name="branch" value={form.branch} onChange={handleChange} placeholder="CSE"
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
               </div>
             </div>
 
             {/* College + Batch */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1.5">College</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">College</label>
                 <input name="college" value={form.college} onChange={handleChange} placeholder="NIT Kurukshetra"
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1.5">Batch</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Batch</label>
                 <input name="batch" value={form.batch} onChange={handleChange} placeholder="2023-27"
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
               </div>
             </div>
 
             {/* Mobile */}
             <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Mobile No</label>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">Mobile No</label>
               <input name="mobile_no" type="tel" value={form.mobile_no} onChange={handleChange} placeholder="+91 98765 43210"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent" />
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
             </div>
 
             {/* Actions */}
@@ -290,6 +288,16 @@ const Icon = {
       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 8.91A16 16 0 0 0 15 15.91l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
     </svg>
   ),
+  Sun: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  ),
+  Moon: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  ),
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -341,6 +349,7 @@ export default function ProfilePage() {
     router.push('/login')
   }
 
+
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
@@ -365,20 +374,6 @@ export default function ProfilePage() {
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 rounded-full border-2 border-accent/20 border-t-accent animate-spin" />
-            <p className="text-sm text-text-muted">Loading profile…</p>
-          </div>
-        </main>
-        <BottomNav />
-      </ProtectedRoute>
-    )
-  }
-
   if (!user) return null
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -402,10 +397,11 @@ export default function ProfilePage() {
       </AnimatePresence>
 
       <motion.main
-        initial={{ opacity: 0, y: 28 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] }}
+        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] }}
         className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
+        style={{ willChange: 'opacity, transform' }}
       >
 
         {/* ── Header title ───────────────────────────────────────────────── */}
@@ -415,7 +411,7 @@ export default function ProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.06, type: 'spring' as const, damping: 26, stiffness: 210 }}
+          transition={{ delay: 0.03, type: 'spring' as const, damping: 25 }}
           className="relative rounded-3xl overflow-hidden mb-4 shadow-xl"
           style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 55%, #0a6b70 100%)' }}
         >
@@ -457,8 +453,8 @@ export default function ProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.14, type: 'spring' as const, damping: 26, stiffness: 210 }}
-          className="rounded-3xl overflow-hidden mb-4"
+          transition={{ delay: 0.06, type: 'spring' as const, damping: 25 }}
+          className={`rounded-3xl overflow-hidden mb-4 ${GLASS_CARD_CLASS}`}
           style={glassCard}
         >
           {/* Section header */}
@@ -467,7 +463,7 @@ export default function ProfilePage() {
             {!editingSettings && (
               <button
                 onClick={() => setEditingSettings(true)}
-                className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-colors"
+                className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 active:scale-95"
                 style={{ background: 'rgba(26,158,160,0.10)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
               >
                 Edit
@@ -484,7 +480,7 @@ export default function ProfilePage() {
                   type="number" min="1" max="100" required
                   value={settingsForm.target_attendance}
                   onChange={(e) => setSettingsForm((f) => ({ ...f, target_attendance: e.target.value }))}
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
                 />
               </div>
 
@@ -494,7 +490,7 @@ export default function ProfilePage() {
                 <div className="grid grid-cols-2 gap-2">
                   {(['class', 'hour'] as const).map((mode) => (
                     <button key={mode} type="button" onClick={() => setSettingsForm((f) => ({ ...f, theory_mode: mode }))}
-                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all"
+                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all duration-200 active:scale-95"
                       style={settingsForm.theory_mode === mode
                         ? { background: 'rgba(26,158,160,0.15)', border: '1.5px solid #1a9ea0', color: '#1a9ea0' }
                         : { background: 'transparent', borderColor: 'rgba(26,158,160,0.20)', color: '#7a93a8' }
@@ -512,7 +508,7 @@ export default function ProfilePage() {
                 <div className="grid grid-cols-2 gap-2">
                   {(['class', 'hour'] as const).map((mode) => (
                     <button key={mode} type="button" onClick={() => setSettingsForm((f) => ({ ...f, lab_mode: mode }))}
-                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all"
+                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all duration-200 active:scale-95"
                       style={settingsForm.lab_mode === mode
                         ? { background: 'rgba(26,158,160,0.15)', border: '1.5px solid #1a9ea0', color: '#1a9ea0' }
                         : { background: 'transparent', borderColor: 'rgba(26,158,160,0.20)', color: '#7a93a8' }
@@ -531,12 +527,12 @@ export default function ProfilePage() {
                 >
                   Cancel
                 </button>
-                <motion.button type="submit" disabled={savingSettings} whileTap={{ scale: 0.96 }}
-                  className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer disabled:opacity-60"
+                <button type="submit" disabled={savingSettings}
+                  className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer disabled:opacity-60 transition-all duration-200 active:scale-95"
                   style={{ background: 'linear-gradient(135deg, #1a9ea0, #0d7c80)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}
                 >
                   {savingSettings ? 'Saving…' : 'Save'}
-                </motion.button>
+                </button>
               </div>
             </form>
           ) : (
@@ -554,21 +550,20 @@ export default function ProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22, type: 'spring' as const, damping: 26, stiffness: 210 }}
-          className="rounded-3xl overflow-hidden mb-6"
+          transition={{ delay: 0.12, type: 'spring' as const, damping: 25 }}
+          className={`rounded-3xl overflow-hidden mb-6 ${GLASS_CARD_CLASS}`}
           style={glassCard}
         >
           {/* Section header */}
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(26,158,160,0.10)' }}>
             <h3 className="text-xs font-bold tracking-widest text-text-muted uppercase">Personal Details</h3>
-            <motion.button
-              whileTap={{ scale: 0.92 }}
+            <button
               onClick={() => setShowEditProfile(true)}
-              className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-colors"
+              className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 active:scale-95"
               style={{ background: 'rgba(26,158,160,0.10)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
             >
               Edit
-            </motion.button>
+            </button>
           </div>
 
           <div>
@@ -589,14 +584,10 @@ export default function ProfilePage() {
         </motion.div>
 
         {/* ── Logout ─────────────────────────────────────────────────────── */}
-        <motion.button
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.30 }}
-          whileTap={{ scale: 0.98 }}
+        <button
           onClick={handleLogout}
           disabled={loggingOut}
-          className="w-full flex items-center justify-center gap-2.5 font-bold py-4 rounded-2xl cursor-pointer disabled:opacity-50 transition-all"
+          className="w-full flex items-center justify-center gap-2.5 font-bold py-4 rounded-2xl cursor-pointer disabled:opacity-50 transition-all duration-200 active:scale-95"
           style={{
             background: 'rgba(220,38,38,0.08)',
             border: '1.5px solid rgba(220,38,38,0.20)',
@@ -616,7 +607,7 @@ export default function ProfilePage() {
             </svg>
           )}
           <span>{loggingOut ? 'Signing out…' : 'Log Out'}</span>
-        </motion.button>
+        </button>
       </motion.main>
 
       <BottomNav />

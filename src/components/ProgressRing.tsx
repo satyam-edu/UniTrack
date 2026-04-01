@@ -64,9 +64,10 @@ export default function ProgressRing({
           strokeDasharray={circumference}
           strokeDashoffset={offset || initialOffset}
           strokeLinecap="round"
-          className={`transition-all duration-1000 ease-out ${
+          style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1)' }}
+          className={
             isNaN(percentage) || percentage === 0 ? 'text-text-muted opacity-20' : isHealthy ? 'text-success' : 'text-danger'
-          }`}
+          }
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
