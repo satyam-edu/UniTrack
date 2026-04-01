@@ -43,3 +43,5 @@ next-env.d.ts
 # AI Assistant Configs
 AGENTS.md
 CLAUDE.md
+
+.cursor/

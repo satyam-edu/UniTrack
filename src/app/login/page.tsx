@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { lookupEmailByEnrollment } from '@/app/actions/auth'
 
@@ -10,6 +11,7 @@ export default function LoginPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   const [form, setForm] = useState({
     enrollment_no: '',
@@ -72,7 +74,7 @@ export default function LoginPage() {
               <line x1="15" y1="12" x2="3" y2="12" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Ready to track your progress?</h1>
           <p className="text-text-muted mt-1 text-sm">Sign in with your enrollment number</p>
         </div>
 
@@ -99,7 +101,7 @@ export default function LoginPage() {
               required
               value={form.enrollment_no}
               onChange={handleChange}
-              placeholder="e.g. 2023BTCS001"
+              placeholder="e.g. 013B5CS4908"
               className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
             />
           </div>
@@ -109,16 +111,35 @@ export default function LoginPage() {
             <label htmlFor="password" className="block text-sm font-medium text-text-secondary mb-1.5">
               Password
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              value={form.password}
-              onChange={handleChange}
-              placeholder="Enter your password"
-              className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={form.password}
+                onChange={handleChange}
+                placeholder="Enter your password"
+                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 pr-11 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-foreground transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            {/* Forgot Password */}
+            <div className="flex justify-end mt-1.5">
+              <Link
+                href="/forgot-password"
+                className="text-sm text-text-muted hover:text-accent transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
           </div>
 
           {/* Submit */}

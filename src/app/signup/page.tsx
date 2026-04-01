@@ -3,12 +3,14 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 export default function SignupPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   const [form, setForm] = useState({
     name: '',
@@ -38,7 +40,11 @@ export default function SignupPage() {
       })
 
       if (authError) {
-        setError(authError.message)
+        // Supabase returns "User already registered" for duplicate emails
+        const isEmailTaken =
+          authError.message.toLowerCase().includes('already registered') ||
+          authError.message.toLowerCase().includes('already exists')
+        setError(isEmailTaken ? 'This Email ID is already registered.' : authError.message)
         setLoading(false)
         return
       }
@@ -63,7 +69,16 @@ export default function SignupPage() {
       })
 
       if (insertError) {
-        setError(insertError.message)
+        // Postgres unique-violation (23505) on enrollment_no column
+        const isDuplicateEnrollment =
+          (insertError as any).code === '23505' &&
+          (insertError.message.toLowerCase().includes('enrollment') ||
+           insertError.message.toLowerCase().includes('users_enrollment'))
+        setError(
+          isDuplicateEnrollment
+            ? 'Enrollment Number is already registered.'
+            : insertError.message
+        )
         setLoading(false)
         return
       }
@@ -117,7 +132,7 @@ export default function SignupPage() {
               required
               value={form.name}
               onChange={handleChange}
-              placeholder="John Doe"
+              placeholder="e.g. Nick"
               className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
             />
           </div>
@@ -134,7 +149,7 @@ export default function SignupPage() {
               required
               value={form.email}
               onChange={handleChange}
-              placeholder="john@university.edu"
+              placeholder="e.g. nick@college.edu"
               className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
             />
           </div>
@@ -144,23 +159,33 @@ export default function SignupPage() {
             <label htmlFor="password" className="block text-sm font-medium text-text-secondary mb-1.5">
               Password
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              minLength={6}
-              value={form.password}
-              onChange={handleChange}
-              placeholder="Minimum 6 characters"
-              className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={form.password}
+                onChange={handleChange}
+                placeholder="Minimum 6 characters"
+                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 pr-11 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-foreground transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           {/* Enrollment No */}
           <div>
             <label htmlFor="enrollment_no" className="block text-sm font-medium text-text-secondary mb-1.5">
-              Enrollment No
+              Enrollment No <span className="text-danger">*</span>
             </label>
             <input
               id="enrollment_no"
@@ -169,7 +194,7 @@ export default function SignupPage() {
               required
               value={form.enrollment_no}
               onChange={handleChange}
-              placeholder="e.g. 2023BTCS001"
+              placeholder="e.g. 013B5CS4908"
               className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
             />
           </div>
@@ -217,7 +242,7 @@ export default function SignupPage() {
               type="text"
               value={form.college}
               onChange={handleChange}
-              placeholder="e.g. NIT Kurukshetra"
+              placeholder="e.g. USS"
               className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
             />
           </div>

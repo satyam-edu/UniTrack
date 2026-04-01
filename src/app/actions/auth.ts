@@ -30,3 +30,25 @@ export async function lookupEmailByEnrollment(
     return { error: 'No account found with this enrollment number.' }
   }
 }
+
+/**
+ * Checks whether an email address is registered in the system.
+ * Uses the admin client to query the public users table (bypasses RLS).
+ * Returns true if a matching record exists, false otherwise.
+ */
+export async function checkEmailExists(email: string): Promise<boolean> {
+  if (!email || email.trim() === '') return false
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .select('email')
+      .eq('email', email.trim().toLowerCase())
+      .maybeSingle()
+
+    if (error) return false
+    return data !== null
+  } catch {
+    return false
+  }
+}

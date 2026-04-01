@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
@@ -44,6 +45,195 @@ const glassCard: React.CSSProperties = {
 }
 
 const GLASS_CARD_CLASS = 'bg-white/80 border border-white/60'
+
+// ─── Change Password Modal ────────────────────────────────────────────────────
+
+function ChangePasswordModal({ onClose, userEmail }: { onClose: () => void; userEmail: string }) {
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => { document.body.style.overflow = ''; window.removeEventListener('keydown', onKey) }
+  }, [onClose])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (newPassword !== confirmPassword) { setError('Passwords do not match.'); return }
+    if (newPassword.length < 6) { setError('Password must be at least 6 characters.'); return }
+    setLoading(true)
+    try {
+      // Step 1: Verify current password by re-authenticating
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: userEmail,
+        password: currentPassword,
+      })
+      if (signInError) {
+        setError('Incorrect current password.')
+        return
+      }
+
+      // Step 2: Current password confirmed — update to new password
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+      if (updateError) { setError(updateError.message); return }
+      setSuccess(true)
+      setTimeout(onClose, 1800)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(10,15,28,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 12 }}
+        transition={{ type: 'spring' as const, damping: 25, stiffness: 300 }}
+        className="w-full max-w-sm rounded-3xl overflow-hidden bg-white/95 border border-white/70"
+        style={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}
+      >
+        <div className="px-6 pt-5 pb-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">Change Password</h2>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-900 cursor-pointer transition-colors"
+              style={{ background: 'rgba(26,158,160,0.08)' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-xl px-4 py-3 text-sm text-danger" style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.20)' }}>
+              {error}
+            </div>
+          )}
+
+          {success ? (
+            <div className="flex flex-col items-center text-center gap-3 py-4">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'rgba(26,158,160,0.12)' }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-bold text-slate-900">Password updated!</p>
+                <p className="text-sm text-slate-500 mt-0.5">Your new password is active.</p>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Current Password */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Current Password</label>
+                <div className="relative">
+                  <input
+                    type={showCurrent ? 'text' : 'password'}
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Your current password"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-11 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+                  />
+                  <button type="button" onClick={() => setShowCurrent((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+                    aria-label={showCurrent ? 'Hide' : 'Show'}
+                  >
+                    {showCurrent ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div style={{ height: '1px', background: 'rgba(26,158,160,0.10)' }} />
+
+              {/* New Password */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showNew ? 'text' : 'password'}
+                    required minLength={6}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Minimum 6 characters"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-11 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+                  />
+                  <button type="button" onClick={() => setShowNew((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+                    aria-label={showNew ? 'Hide' : 'Show'}
+                  >
+                    {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirm ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your password"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-11 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+                  />
+                  <button type="button" onClick={() => setShowConfirm((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+                    aria-label={showConfirm ? 'Hide' : 'Show'}
+                  >
+                    {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button type="button" onClick={onClose}
+                  className="py-3 rounded-xl text-sm font-semibold text-text-secondary cursor-pointer transition-colors"
+                  style={{ background: 'rgba(26,158,160,0.06)', border: '1px solid rgba(26,158,160,0.15)' }}
+                >
+                  Cancel
+                </button>
+                <motion.button type="submit" disabled={loading} whileTap={{ scale: 0.96 }}
+                  className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.35)' }}
+                >
+                  {loading ? 'Saving…' : 'Update Password'}
+                </motion.button>
+              </div>
+            </form>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  )
+}
 
 // ─── Edit Profile Modal ───────────────────────────────────────────────────────
 
@@ -157,19 +347,33 @@ function EditProfileModal({
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
             </div>
 
-            {/* Email */}
+            {/* Email — read-only */}
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1.5">Email</label>
-              <input name="email" type="email" value={form.email} onChange={handleChange} required placeholder="e.g. satyam@university.edu"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                Email
+                <span className="ml-1.5 text-[10px] font-normal text-slate-400 tracking-wide">(cannot be changed)</span>
+              </label>
+              <input
+                name="email" type="email" value={form.email}
+                readOnly
+                placeholder="e.g. satyam@university.edu"
+                className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-400 placeholder:text-slate-300 cursor-not-allowed opacity-70 select-none"
+              />
             </div>
 
             {/* Enrollment + Branch */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Enrollment No</label>
-                <input name="enrollment_no" value={form.enrollment_no} onChange={handleChange} placeholder="2023BTCS001"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" />
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                  Enrollment No
+                  <span className="ml-1 text-[9px] font-normal text-slate-400">(locked)</span>
+                </label>
+                <input
+                  name="enrollment_no" value={form.enrollment_no}
+                  readOnly
+                  placeholder="2023BTCS001"
+                  className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-400 placeholder:text-slate-300 cursor-not-allowed opacity-70 select-none"
+                />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5">Branch</label>
@@ -309,6 +513,7 @@ export default function ProfilePage() {
   const [loggingOut, setLoggingOut] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showEditProfile, setShowEditProfile] = useState(false)
+  const [showChangePassword, setShowChangePassword] = useState(false)
 
   // Attendance settings
   const [editingSettings, setEditingSettings] = useState(false)
@@ -392,6 +597,16 @@ export default function ProfilePage() {
             user={user}
             onClose={() => setShowEditProfile(false)}
             onSaved={handleProfileSaved}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Change Password Modal */}
+      <AnimatePresence>
+        {showChangePassword && (
+          <ChangePasswordModal
+            onClose={() => setShowChangePassword(false)}
+            userEmail={user.email}
           />
         )}
       </AnimatePresence>
@@ -583,31 +798,87 @@ export default function ProfilePage() {
           </div>
         </motion.div>
 
-        {/* ── Logout ─────────────────────────────────────────────────────── */}
-        <button
-          onClick={handleLogout}
-          disabled={loggingOut}
-          className="w-full flex items-center justify-center gap-2.5 font-bold py-4 rounded-2xl cursor-pointer disabled:opacity-50 transition-all duration-200 active:scale-95"
-          style={{
-            background: 'rgba(220,38,38,0.08)',
-            border: '1.5px solid rgba(220,38,38,0.20)',
-            color: '#dc2626',
-          }}
+        {/* ── Account Actions ─────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Change Password */}
+          <button
+            type="button"
+            onClick={() => {
+              console.log('Change Password tapped — modal coming soon')
+              setShowChangePassword(true)
+            }}
+            className="flex items-center justify-center gap-2 font-bold py-4 rounded-2xl cursor-pointer transition-all duration-200 active:scale-95"
+            style={{
+              background: 'rgba(26,158,160,0.08)',
+              border: '1.5px solid rgba(26,158,160,0.20)',
+              color: '#1a9ea0',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span className="text-sm">Change Password</span>
+          </button>
+
+          {/* Log Out */}
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex items-center justify-center gap-2 font-bold py-4 rounded-2xl cursor-pointer disabled:opacity-50 transition-all duration-200 active:scale-95"
+            style={{
+              background: 'rgba(220,38,38,0.08)',
+              border: '1.5px solid rgba(220,38,38,0.20)',
+              color: '#dc2626',
+            }}
+          >
+            {loggingOut ? (
+              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            )}
+            <span className="text-sm">{loggingOut ? 'Signing out…' : 'Log Out'}</span>
+          </button>
+        </div>
+
+        {/* ── Danger Zone ────────────────────────────────────────────────── */}
+        <div
+          className="mt-6 rounded-2xl overflow-hidden"
+          style={{ border: '1.5px solid rgba(220,38,38,0.20)', background: 'rgba(220,38,38,0.04)' }}
         >
-          {loggingOut ? (
-            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          )}
-          <span>{loggingOut ? 'Signing out…' : 'Log Out'}</span>
-        </button>
+          <div className="px-5 py-3.5" style={{ borderBottom: '1px solid rgba(220,38,38,0.12)' }}>
+            <p className="text-xs font-bold tracking-widest uppercase" style={{ color: '#dc2626' }}>Danger Zone</p>
+            <p className="text-[11px] text-text-muted mt-0.5">Irreversible actions — proceed with caution.</p>
+          </div>
+          <div className="px-5 py-4">
+            <button
+              type="button"
+              onClick={() => console.log('Delete Account tapped — confirmation modal coming soon')}
+              className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl font-bold text-sm cursor-pointer transition-all duration-200 active:scale-95"
+              style={{
+                background: 'rgba(220,38,38,0.10)',
+                border: '1.5px solid rgba(220,38,38,0.25)',
+                color: '#dc2626',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+              Delete Account
+            </button>
+          </div>
+        </div>
       </motion.main>
 
       <BottomNav />
