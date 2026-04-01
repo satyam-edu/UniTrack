@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AddClassModal from '@/components/AddClassModal'
+import EditClassModal from '@/components/EditClassModal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,14 +46,37 @@ function formatTime(timeStr: string) {
   })
 }
 
+// ─── Dummy Data Initialization ────────────────────────────────────────────────
+
+const DUMMY_SCHEDULE: Record<string, TimetableSlot[]> = {
+  Monday: [
+    {
+      id: 'dummy-1', subject_id: 'sub-1', day_of_week: 'Monday',
+      start_time: '09:00:00', end_time: '10:00:00', room_location: 'Room 402, Block A',
+      subject: { subject_name: 'Data Structures and Algorithms', subject_code: 'CS201', type: 'Theory' }
+    },
+    {
+      id: 'dummy-2', subject_id: 'sub-2', day_of_week: 'Monday',
+      start_time: '10:00:00', end_time: '11:00:00', room_location: 'Room 405, Block A',
+      subject: { subject_name: 'Database Management Systems', subject_code: 'CS202', type: 'Theory' }
+    },
+    {
+      id: 'dummy-3', subject_id: 'sub-3', day_of_week: 'Monday',
+      start_time: '11:00:00', end_time: '13:00:00', room_location: 'Lab 2, Block C',
+      subject: { subject_name: 'Computer Networks', subject_code: 'CS203', type: 'Lab' }
+    }
+  ]
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function TimetablePage() {
-  const [schedule, setSchedule] = useState<Record<string, TimetableSlot[]>>({})
-  const [loading, setLoading] = useState(true)
+  const [schedule, setSchedule] = useState<Record<string, TimetableSlot[]>>(DUMMY_SCHEDULE)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string>('Monday')
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [classToEdit, setClassToEdit] = useState<TimetableSlot | null>(null)
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
@@ -66,7 +90,7 @@ export default function TimetablePage() {
       .eq('user_id', session.user.id)
       .order('start_time', { ascending: true })
 
-    if (error || !data) { setLoading(false); return }
+    if (error || !data) return
 
     const grouped: Record<string, TimetableSlot[]> = {}
     data.forEach((slot: any) => {
@@ -75,7 +99,6 @@ export default function TimetablePage() {
     })
 
     setSchedule(grouped)
-    setLoading(false)
   }, [])
 
   useEffect(() => { loadTimetable() }, [loadTimetable])
@@ -99,22 +122,7 @@ export default function TimetablePage() {
     setDeletingId(null)
   }
 
-  // ── Loading state ─────────────────────────────────────────────────────────────
-
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 rounded-full border-2 border-accent/20 border-t-accent animate-spin" />
-            <p className="text-sm text-text-muted">Loading timetable…</p>
-          </div>
-        </main>
-        <BottomNav />
-      </ProtectedRoute>
-    )
-  }
-
+  // ── Loading state rendered inline — no full-page gate
   const slotsForDay = schedule[selectedDay] ?? []
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -122,19 +130,19 @@ export default function TimetablePage() {
   return (
     <ProtectedRoute>
       <motion.main
-        initial={{ opacity: 0, y: 28 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] as [number,number,number,number] }}
+        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number,number,number,number] }}
         className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
+        style={{ willChange: 'opacity, transform' }}
       >
 
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Timetable</h1>
           <motion.button
-            whileTap={{ scale: 0.93 }}
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer transition-colors shadow-lg"
+            className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer transition-all duration-200 active:scale-95 shadow-lg"
             style={{
               background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
               boxShadow: '0 4px 14px rgba(26,158,160,0.40)',
@@ -150,12 +158,10 @@ export default function TimetablePage() {
 
         {/* ── Day Selector ───────────────────────────────────────────────────── */}
         <div
-          className="flex items-center gap-1 mb-6 p-1.5 rounded-2xl overflow-x-auto scrollbar-hide"
+          className="flex items-center gap-1 mb-6 p-1.5 rounded-2xl overflow-x-auto scrollbar-hide bg-white/60 border border-white/55"
           style={{
-            background: 'rgba(255,255,255,0.60)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255,255,255,0.55)',
             boxShadow: '0 2px 12px rgba(26,158,160,0.08)',
           }}
         >
@@ -168,7 +174,7 @@ export default function TimetablePage() {
                 key={full}
                 onClick={() => setSelectedDay(full)}
                 className="relative flex-1 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap min-w-[44px] flex flex-col items-center gap-0.5"
-                style={{ color: isActive ? '#fff' : '#7a93a8' }}
+                style={{ color: isActive ? '#fff' : undefined }}
               >
                 {/* Animated pill background */}
                 {isActive && (
@@ -204,12 +210,10 @@ export default function TimetablePage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.25 }}
-              className="flex flex-col items-center justify-center py-16 rounded-3xl mt-4"
+              className="flex flex-col items-center justify-center py-16 rounded-3xl mt-4 bg-white/55 border border-dashed border-teal-600/25"
               style={{
-                background: 'rgba(255,255,255,0.55)',
                 backdropFilter: 'blur(16px)',
                 WebkitBackdropFilter: 'blur(16px)',
-                border: '1.5px dashed rgba(26,158,160,0.25)',
               }}
             >
               <div
@@ -247,15 +251,15 @@ export default function TimetablePage() {
                 {slotsForDay.map((slot, i) => (
                   <motion.div
                     key={slot.id}
-                    initial={{ opacity: 0, x: -12 }}
+                    initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{
-                      delay: i * 0.08,
+                      delay: i * 0.06,
                       type: 'spring' as const,
-                      damping: 26,
-                      stiffness: 220,
+                      damping: 25,
                     }}
                     className="flex gap-4 items-start"
+                    style={{ willChange: 'transform, opacity' }}
                   >
                     {/* Timeline dot */}
                     <div className="flex-shrink-0 mt-3.5 z-10">
@@ -272,13 +276,11 @@ export default function TimetablePage() {
 
                     {/* Glass card */}
                     <div
-                      className="flex-1 rounded-2xl overflow-hidden"
+                      className="flex-1 rounded-2xl overflow-hidden bg-white/80 border border-white/60"
                       style={{
-                        background: 'rgba(255,255,255,0.80)',
                         backdropFilter: 'blur(20px)',
                         WebkitBackdropFilter: 'blur(20px)',
-                        border: '1px solid rgba(255,255,255,0.60)',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.9) inset',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
                       }}
                     >
                       <div className="p-4 flex items-start justify-between gap-3">
@@ -328,9 +330,12 @@ export default function TimetablePage() {
 
                         {/* Right: Edit + Delete */}
                         <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
-                          <Link
-                            href={`/timetable/${slot.id}/edit`}
-                            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors"
+                          <button
+                            onClick={() => {
+                              setClassToEdit(slot);
+                              setIsEditModalOpen(true);
+                            }}
+                            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors cursor-pointer"
                             style={{
                               background: 'rgba(26,158,160,0.08)',
                               color: '#1a9ea0',
@@ -340,7 +345,7 @@ export default function TimetablePage() {
                               <path d="M12 20h9" />
                               <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                             </svg>
-                          </Link>
+                          </button>
 
                           <motion.button
                             whileTap={{ scale: 0.88 }}
@@ -384,6 +389,16 @@ export default function TimetablePage() {
           initialDay={selectedDay}
         />
       )}
+
+      <AnimatePresence>
+        {isEditModalOpen && classToEdit && (
+          <EditClassModal
+            slot={classToEdit}
+            onClose={() => setIsEditModalOpen(false)}
+            onSuccess={() => { loadTimetable() }}
+          />
+        )}
+      </AnimatePresence>
     </ProtectedRoute>
   )
 }

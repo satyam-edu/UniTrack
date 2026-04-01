@@ -73,30 +73,30 @@ function formatTime(timeStr: string) {
 // ─── Animation variants ───────────────────────────────────────────────────────
 
 const pageVariants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] },
-  },
-}
-
-const attendanceCardVariants = {
-  hidden: { opacity: 0, y: 24, scale: 0.97 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { type: 'spring' as const, damping: 25, stiffness: 200, delay: 0.08 },
-  },
-}
-
-const calendarVariants = {
   hidden: { opacity: 0, y: 16 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { type: 'spring' as const, damping: 28, stiffness: 180, delay: 0.18 },
+    transition: { duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] },
+  },
+}
+
+const attendanceCardVariants = {
+  hidden: { opacity: 0, y: 16, scale: 0.98 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { type: 'spring' as const, damping: 25, delay: 0.04 },
+  },
+}
+
+const calendarVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { type: 'spring' as const, damping: 25, stiffness: 300, delay: 0.08 },
   },
 }
 
@@ -552,7 +552,7 @@ export default function HomePage() {
                   ? { height: 'auto', opacity: 1 }
                   : { height: 0,      opacity: 0 }
                 }
-                transition={{ type: 'spring' as const, damping: 30, stiffness: 220 }}
+                transition={{ duration: 0.2 }}
                 style={{ overflow: 'hidden' }}
               >
                 <div className="space-y-3 pb-0.5">
@@ -575,9 +575,9 @@ export default function HomePage() {
                     return (
                       <motion.div
                         key={slot.id}
-                        initial={{ opacity: 0, y: 16 }}
+                        initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: status === 'Cancelled' ? 0.6 : 1, y: 0 }}
-                        transition={{ delay: i * 0.06, type: 'spring' as const, damping: 28, stiffness: 200 }}
+                        transition={{ delay: i * 0.06, type: 'spring' as const, damping: 25 }}
                         className="rounded-3xl overflow-hidden"
                         style={{
                           background: cardBg,
@@ -585,6 +585,7 @@ export default function HomePage() {
                           WebkitBackdropFilter: 'blur(20px)',
                           border: `1.5px solid ${cardBorder}`,
                           boxShadow: '0 4px 20px rgba(0,0,0,0.05), 0 1px 0 rgba(255,255,255,0.8) inset',
+                          willChange: 'transform, opacity',
                         }}
                       >
                         {/* Card Body */}
@@ -618,16 +619,11 @@ export default function HomePage() {
                           {/* Undo button — only when a status is selected */}
                           <AnimatePresence>
                             {status && (
-                              <motion.button
+                              <button
                                 key="undo"
-                                initial={{ opacity: 0, scale: 0.7 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.7 }}
-                                transition={{ type: 'spring' as const, damping: 20, stiffness: 300 }}
-                                whileTap={{ scale: 0.85 }}
                                 onClick={() => handleUndoAttendance(slot)}
                                 aria-label="Undo attendance"
-                                className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full cursor-pointer transition-colors"
+                                className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full cursor-pointer transition-all duration-200 active:scale-95"
                                 style={{
                                   background:
                                     status === 'Present'   ? 'rgba(34,197,94,0.15)'  :
@@ -643,7 +639,7 @@ export default function HomePage() {
                                   <line x1="18" y1="6" x2="6" y2="18" />
                                   <line x1="6" y1="6" x2="18" y2="18" />
                                 </svg>
-                              </motion.button>
+                              </button>
                             )}
                           </AnimatePresence>
                         </div>
@@ -662,11 +658,10 @@ export default function HomePage() {
                           ).map(({ label, value, activeColor, activeShadow }) => {
                             const isActive = status === value
                             return (
-                              <motion.button
+                              <button
                                 key={value}
-                                whileTap={{ scale: 0.93 }}
                                 onClick={() => handleMarkAttendance(slot, value)}
-                                className="py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer"
+                                className="py-2.5 rounded-xl text-xs font-bold transition-all duration-200 active:scale-95 cursor-pointer"
                                 style={
                                   isActive
                                     ? { background: activeColor, color: 'white', boxShadow: `0 3px 10px ${activeShadow}` }
@@ -674,7 +669,7 @@ export default function HomePage() {
                                 }
                               >
                                 {label}
-                              </motion.button>
+                              </button>
                             )
                           })}
                         </div>

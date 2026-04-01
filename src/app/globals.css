@@ -28,35 +28,10 @@
   --text-secondary: #4a6478;
 }
 
-/* ── Dark mode ────────────────────────────────────────────────────────── */
-.dark {
-  /* Page & surface */
-  --background: #0a0f1c;
-  --background-end: #0d1829;
-  --foreground: #e0eaf2;
-  --card-bg: rgba(15, 28, 46, 0.75);
-  --card-border: rgba(26, 158, 160, 0.18);
 
-  /* Form controls */
-  --input-bg: rgba(10, 20, 36, 0.80);
-  --input-border: rgba(26, 158, 160, 0.30);
-  --input-focus: #22b5b8;
-
-  /* Coastal teal accent — slightly brighter for dark surfaces */
-  --accent: #22b5b8;
-  --accent-hover: #1a9ea0;
-  --accent-glow: rgba(34, 181, 184, 0.28);
-
-  /* Semantic */
-  --danger: #ff6b7a;
-  --success: #2ecc82;
-
-  /* Typography helpers */
-  --text-muted: #5a7a92;
-  --text-secondary: #8aadc4;
-}
 
 @theme inline {
+  --dark-mode: selector;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card-bg: var(--card-bg);

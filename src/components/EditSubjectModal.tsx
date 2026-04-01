@@ -16,9 +16,10 @@ interface Props {
   subject: Subject
   onClose: () => void
   onSuccess: () => void
+  existingSubjects: Subject[]
 }
 
-export default function EditSubjectModal({ subject, onClose, onSuccess }: Props) {
+export default function EditSubjectModal({ subject, onClose, onSuccess, existingSubjects }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -52,6 +53,17 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+
+    // Duplicate check (Exclude Self)
+    const isDuplicate = existingSubjects.some(
+      (sub) => sub.subject_code.toLowerCase() === form.subject_code.trim().toLowerCase() && sub.id !== subject.id
+    )
+
+    if (isDuplicate) {
+      setError('This subject code already exists!')
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -86,18 +98,17 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
         initial={{ opacity: 0, scale: 0.95, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 16 }}
-        transition={{ type: 'spring', damping: 26, stiffness: 300 }}
-        className="w-full max-w-md bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-white/40 shadow-xl rounded-3xl overflow-hidden"
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className="w-full max-w-md bg-white/95 backdrop-blur-xl border border-white shadow-2xl text-slate-800 rounded-3xl overflow-hidden"
       >
         <div className="px-6 pt-5 pb-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-bold tracking-tight text-foreground">Edit Subject</h2>
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">Edit Subject</h2>
             <button
               onClick={onClose}
               aria-label="Close modal"
-              className="w-8 h-8 flex items-center justify-center rounded-xl text-text-muted hover:text-foreground cursor-pointer transition-colors"
-              style={{ background: 'rgba(26,158,160,0.08)' }}
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer transition-colors"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -108,7 +119,7 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
 
           {/* Error */}
           {error && (
-            <div className="mb-4 rounded-xl px-4 py-3 text-sm text-danger" style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.20)' }}>
+            <div className="mb-4 rounded-xl px-4 py-3 text-sm text-red-600 bg-red-50 border border-red-200">
               {error}
             </div>
           )}
@@ -116,8 +127,8 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="edit-modal-subject_name" className="block text-sm font-medium text-text-secondary mb-1.5">
-                Subject Name <span className="text-danger">*</span>
+              <label htmlFor="edit-modal-subject_name" className="block text-sm font-medium text-slate-600 mb-1.5">
+                Subject Name <span className="text-red-500">*</span>
               </label>
               <input
                 id="edit-modal-subject_name"
@@ -128,14 +139,14 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
                 value={form.subject_name}
                 onChange={handleChange}
                 placeholder="e.g. Data Structures"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="edit-modal-subject_code" className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Code <span className="text-danger">*</span>
+                <label htmlFor="edit-modal-subject_code" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Code <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="edit-modal-subject_code"
@@ -145,13 +156,20 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
                   value={form.subject_code}
                   onChange={handleChange}
                   placeholder="e.g. CS201"
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all ${
+                    error === 'This subject code already exists!' ? 'border-red-500 ring-red-500/20' : 'border-slate-200'
+                  }`}
                 />
+                {error === 'This subject code already exists!' && (
+                  <p className="text-red-500 text-xs mt-1 font-medium ml-1">
+                    {error}
+                  </p>
+                )}
               </div>
 
               <div>
-                <label htmlFor="edit-modal-type" className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Type <span className="text-danger">*</span>
+                <label htmlFor="edit-modal-type" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Type <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="edit-modal-type"
@@ -159,7 +177,7 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
                   required
                   value={form.type}
                   onChange={handleChange}
-                  className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none cursor-pointer"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none cursor-pointer transition-all"
                 >
                   <option value="Theory">Theory</option>
                   <option value="Lab">Lab</option>
@@ -168,9 +186,9 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
             </div>
 
             <div>
-              <label htmlFor="edit-modal-faculty_name" className="block text-sm font-medium text-text-secondary mb-1.5 flex items-center justify-between">
+              <label htmlFor="edit-modal-faculty_name" className="block text-sm font-medium text-slate-600 mb-1.5 flex items-center justify-between">
                 <span>Teacher</span>
-                <span className="text-text-muted text-xs">Optional</span>
+                <span className="text-slate-400 text-xs">Optional</span>
               </label>
               <input
                 id="edit-modal-faculty_name"
@@ -179,7 +197,7 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
                 value={form.faculty_name}
                 onChange={handleChange}
                 placeholder="e.g. Dr. Alan Turing"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               />
             </div>
 
@@ -188,7 +206,7 @@ export default function EditSubjectModal({ subject, onClose, onSuccess }: Props)
               <button
                 type="button"
                 onClick={onClose}
-                className="py-3 rounded-xl font-semibold text-sm bg-background border border-card-border text-text-secondary hover:text-foreground transition-colors cursor-pointer"
+                className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
