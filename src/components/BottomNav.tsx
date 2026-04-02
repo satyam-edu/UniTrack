@@ -52,7 +52,7 @@ export default function BottomNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-[480px] bg-white/90 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-white/50 px-2 py-2">
+    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-[480px] bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 px-2 py-2">
       <div className="flex justify-between items-center w-full">
         {navItems.map((item) => {
           const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
@@ -60,7 +60,7 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 px-4 py-1.5 rounded-full transition-all duration-300 ${
+              className={`flex flex-col items-center justify-center gap-1 px-4 py-1.5 rounded-2xl transition-all duration-300 ${
                 isActive
                   ? 'bg-[#E8F1F2] text-teal-700 shadow-sm'
                   : 'text-slate-500 hover:text-teal-600 bg-transparent'
