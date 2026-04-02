@@ -16,6 +16,11 @@ interface SubjectStats {
   percentage: number
 }
 
+interface SubjectDay {
+  name: string
+  status: 'present' | 'absent' | 'cancelled' | 'upcoming'
+}
+
 interface Subject {
   id: string
   subject_name: string
@@ -23,6 +28,7 @@ interface Subject {
   faculty_name: string
   type: string
   stats: SubjectStats
+  days: SubjectDay[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -180,18 +186,50 @@ export default function SubjectsPage() {
     // 3. Fetch attendance records for all subjects
     const { data: attendance } = await supabase
       .from('attendance')
-      .select('subject_id, status')
+      .select('subject_id, status, date')
       .eq('user_id', userId)
 
-    // 4. Compute per-subject stats
+    // 4. Fetch timetable
+    const { data: timetable } = await supabase
+      .from('timetable')
+      .select('subject_id, day_of_week')
+      .eq('user_id', userId)
+
+    const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7 }
+    const dayNamesFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+    // 5. Compute per-subject stats
     const enriched: Subject[] = subjectsData.map((sub) => {
       const records = (attendance || []).filter(
-        (a: { subject_id: string; status: string }) => a.subject_id === sub.id
+        (a: { subject_id: string; status: string; date?: string }) => a.subject_id === sub.id
       )
-      const present = records.filter((r: { status: string }) => r.status === 'Present').length
-      const absent  = records.filter((r: { status: string }) => r.status === 'Absent').length
+      const present = records.filter((r) => r.status === 'Present').length
+      const absent  = records.filter((r) => r.status === 'Absent').length
       const total   = present + absent // Cancelled doesn't count
       const percentage = total > 0 ? (present / total) * 100 : 0
+
+      const rawDays = Array.from(new Set((timetable || []).filter((t: any) => t.subject_id === sub.id).map((t: any) => t.day_of_week as keyof typeof dayOrder)))
+      rawDays.sort((a, b) => (dayOrder[a] || 99) - (dayOrder[b] || 99))
+      
+      const mappedDays: SubjectDay[] = rawDays.map((fullDay) => {
+        const dayRecords = records.filter((a) => {
+          if (!a.date) return false
+          const d = new Date(a.date)
+          return dayNamesFull[d.getUTCDay()] === fullDay
+        })
+        
+        dayRecords.sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())
+        
+        let status: 'present' | 'absent' | 'cancelled' | 'upcoming' = 'upcoming'
+        if (dayRecords.length > 0) {
+          const lstatus = dayRecords[0].status
+          if (lstatus === 'Present') status = 'present'
+          else if (lstatus === 'Absent') status = 'absent'
+          else if (lstatus === 'Cancelled') status = 'cancelled'
+        }
+
+        return { name: fullDay.slice(0, 3), status }
+      })
 
       return {
         id: sub.id,
@@ -200,6 +238,7 @@ export default function SubjectsPage() {
         faculty_name: sub.faculty_name ?? '',
         type: sub.type,
         stats: { attended: present, total, percentage },
+        days: mappedDays,
       }
     })
 
@@ -422,6 +461,39 @@ export default function SubjectsPage() {
                           </>
                         )}
                       </div>
+
+                      {/* Schedule Pills */}
+                      <AnimatePresence>
+                        {isExpanded && subject.days && subject.days.length > 0 && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-2 overflow-hidden"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                              <line x1="16" y1="2" x2="16" y2="6" />
+                              <line x1="8" y1="2" x2="8" y2="6" />
+                              <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>
+                            <div className="flex gap-1.5">
+                              {subject.days.map((d) => {
+                                let styleClass = 'bg-slate-50 text-slate-400 border border-slate-100' // upcoming
+                                if (d.status === 'present') styleClass = 'bg-emerald-100 text-emerald-700 border border-emerald-200/50'
+                                else if (d.status === 'absent') styleClass = 'bg-rose-100 text-rose-700 border border-rose-200/50'
+                                else if (d.status === 'cancelled') styleClass = 'bg-slate-200 text-slate-600 border border-slate-300/50'
+
+                                return (
+                                  <span key={d.name} className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-widest ${styleClass}`}>
+                                    {d.name}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
 
                     {/* Ring + chevron */}
@@ -489,6 +561,15 @@ export default function SubjectsPage() {
                                 {isHealthy ? '✓ On track' : '✗ Below target'}
                               </span>
                             )}
+                          </div>
+
+                          {/* Quick Stats Row */}
+                          <div className="flex justify-between items-center text-[11px] text-slate-400 font-medium uppercase tracking-wider mt-3 border-t border-slate-100 pt-3">
+                            <span>Present: <strong className="text-slate-600">{attended}</strong></span>
+                            <span>•</span>
+                            <span>Absent: <strong className="text-slate-600">{total - attended}</strong></span>
+                            <span>•</span>
+                            <span>Total: <strong className="text-slate-600">{total}</strong></span>
                           </div>
 
                           {/* Actions */}
