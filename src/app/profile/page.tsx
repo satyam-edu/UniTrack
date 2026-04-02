@@ -5,6 +5,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
+import { deleteUserAccount } from '@/app/actions/auth'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import OnboardingModal from '@/components/OnboardingModal'
@@ -514,6 +515,9 @@ export default function ProfilePage() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showEditProfile, setShowEditProfile] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
 
   // Attendance settings
   const [editingSettings, setEditingSettings] = useState(false)
@@ -554,6 +558,25 @@ export default function ProfilePage() {
     router.push('/login')
   }
 
+  async function handleDelete() {
+    if (!user) return
+    setIsDeleting(true)
+    try {
+      const res = await deleteUserAccount(user.id)
+      if (res.error) {
+        setToastMessage(res.error)
+        setTimeout(() => setToastMessage(''), 3000)
+        return
+      }
+      await supabase.auth.signOut()
+      router.push('/signup')
+    } catch (err: any) {
+      setToastMessage(err.message || 'Failed to delete account')
+      setTimeout(() => setToastMessage(''), 3000)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault()
@@ -848,40 +871,82 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        {/* ── Danger Zone ────────────────────────────────────────────────── */}
-        <div
-          className="mt-6 rounded-2xl overflow-hidden"
-          style={{ border: '1.5px solid rgba(220,38,38,0.20)', background: 'rgba(220,38,38,0.04)' }}
-        >
-          <div className="px-5 py-3.5" style={{ borderBottom: '1px solid rgba(220,38,38,0.12)' }}>
-            <p className="text-xs font-bold tracking-widest uppercase" style={{ color: '#dc2626' }}>Danger Zone</p>
-            <p className="text-[11px] text-text-muted mt-0.5">Irreversible actions — proceed with caution.</p>
-          </div>
-          <div className="px-5 py-4">
-            <button
-              type="button"
-              onClick={() => console.log('Delete Account tapped — confirmation modal coming soon')}
-              className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl font-bold text-sm cursor-pointer transition-all duration-200 active:scale-95"
-              style={{
-                background: 'rgba(220,38,38,0.10)',
-                border: '1.5px solid rgba(220,38,38,0.25)',
-                color: '#dc2626',
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6" />
-                <path d="M14 11v6" />
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              </svg>
-              Delete Account
-            </button>
-          </div>
+        {/* ── Delete Account ───────────────────────────────────────────────── */}
+        <div className="mt-8 mb-4">
+          <button
+            type="button"
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl font-bold text-sm cursor-pointer transition-all duration-200 active:scale-95"
+            style={{
+              background: 'rgba(220,38,38,0.08)',
+              border: '1.5px solid rgba(220,38,38,0.20)',
+              color: '#dc2626',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6" />
+              <path d="M14 11v6" />
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+            Delete Account
+          </button>
         </div>
       </motion.main>
 
       <BottomNav />
+
+      {/* Delete Account Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl max-w-sm w-full p-6 text-center shadow-xl"
+            >
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Account?</h3>
+              <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                This action is irreversible and cannot be undone. All your attendance data, subjects, and profile information will be permanently lost.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 disabled:opacity-50 cursor-pointer transition-active active:scale-95"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 rounded-xl font-bold text-white bg-red-600 disabled:opacity-50 cursor-pointer transition-active active:scale-95"
+                >
+                  {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-24 left-1/2 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg z-[60] text-sm font-semibold max-w-[90vw] text-center"
+          >
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </ProtectedRoute>
   )
 }

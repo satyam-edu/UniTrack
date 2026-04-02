@@ -52,3 +52,26 @@ export async function checkEmailExists(email: string): Promise<boolean> {
     return false
   }
 }
+
+/**
+ * Securly deletes a user account using Supabase admin client.
+ */
+export async function deleteUserAccount(userId: string): Promise<{ success?: boolean; error?: string }> {
+  try {
+    // Step 1: Delete the record from the public users table
+    const { error: dbError } = await supabaseAdmin.from('users').delete().eq('id', userId)
+    if (dbError) {
+      return { success: false, error: dbError.message }
+    }
+
+    // Step 2: Only if Step 1 is successful, delete the auth user
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
+    if (authError) {
+      return { success: false, error: authError.message }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to delete user account.' }
+  }
+}
