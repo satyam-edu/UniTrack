@@ -23,6 +23,7 @@ interface Subject {
   faculty_name: string
   type: string
   stats: SubjectStats
+  days: string[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -183,7 +184,15 @@ export default function SubjectsPage() {
       .select('subject_id, status')
       .eq('user_id', userId)
 
-    // 4. Compute per-subject stats
+    // 4. Fetch timetable
+    const { data: timetable } = await supabase
+      .from('timetable')
+      .select('subject_id, day_of_week')
+      .eq('user_id', userId)
+
+    const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7 }
+
+    // 5. Compute per-subject stats
     const enriched: Subject[] = subjectsData.map((sub) => {
       const records = (attendance || []).filter(
         (a: { subject_id: string; status: string }) => a.subject_id === sub.id
@@ -193,6 +202,10 @@ export default function SubjectsPage() {
       const total   = present + absent // Cancelled doesn't count
       const percentage = total > 0 ? (present / total) * 100 : 0
 
+      const rawDays = Array.from(new Set((timetable || []).filter((t: any) => t.subject_id === sub.id).map((t: any) => t.day_of_week as keyof typeof dayOrder)))
+      rawDays.sort((a, b) => (dayOrder[a] || 99) - (dayOrder[b] || 99))
+      const shortDays = rawDays.map(d => d.slice(0, 3))
+
       return {
         id: sub.id,
         subject_name: sub.subject_name,
@@ -200,6 +213,7 @@ export default function SubjectsPage() {
         faculty_name: sub.faculty_name ?? '',
         type: sub.type,
         stats: { attended: present, total, percentage },
+        days: shortDays,
       }
     })
 
@@ -422,6 +436,32 @@ export default function SubjectsPage() {
                           </>
                         )}
                       </div>
+
+                      {/* Schedule Pills */}
+                      <AnimatePresence>
+                        {isExpanded && subject.days.length > 0 && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-2 overflow-hidden"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                              <line x1="16" y1="2" x2="16" y2="6" />
+                              <line x1="8" y1="2" x2="8" y2="6" />
+                              <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>
+                            <div className="flex gap-1">
+                              {subject.days.map((d) => (
+                                <span key={d} className="bg-slate-100 rounded-md px-1.5 py-0.5 text-[10px] uppercase font-bold text-slate-600">
+                                  {d}
+                                </span>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
 
                     {/* Ring + chevron */}
@@ -489,6 +529,15 @@ export default function SubjectsPage() {
                                 {isHealthy ? '✓ On track' : '✗ Below target'}
                               </span>
                             )}
+                          </div>
+
+                          {/* Quick Stats Row */}
+                          <div className="flex justify-between items-center text-[11px] text-slate-400 font-medium uppercase tracking-wider mt-3 border-t border-slate-100 pt-3">
+                            <span>Present: <strong className="text-slate-600">{attended}</strong></span>
+                            <span>•</span>
+                            <span>Absent: <strong className="text-slate-600">{total - attended}</strong></span>
+                            <span>•</span>
+                            <span>Total: <strong className="text-slate-600">{total}</strong></span>
                           </div>
 
                           {/* Actions */}
