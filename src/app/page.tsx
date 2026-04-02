@@ -395,90 +395,93 @@ export default function HomePage() {
           variants={calendarVariants}
           initial="hidden"
           animate="visible"
-          className="rounded-3xl mb-6 overflow-hidden"
-          style={{
-            background: 'rgba(255,255,255,0.72)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255,255,255,0.55)',
-            boxShadow: '0 8px 32px rgba(26,158,160,0.08), 0 1px 0 rgba(255,255,255,0.9) inset',
-          }}
+          className="rounded-3xl mb-6 bg-white p-5 shadow-sm border border-slate-100"
         >
-          <div className="px-5 pt-5 pb-4">
-            {/* Month header */}
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-foreground">
-                {format(currentWeekStart, 'MMMM yyyy')}
-              </h3>
-              <div className="flex items-center gap-1.5">
-                <motion.button
-                  whileTap={{ scale: 0.88 }}
-                  onClick={() => setCurrentWeekStart(subWeeks(currentWeekStart, 2))}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-foreground transition-colors cursor-pointer"
-                  style={{ background: 'rgba(26,158,160,0.08)' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="15 18 9 12 15 6" />
-                  </svg>
-                </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.93 }}
-                  onClick={() => {
-                    setSelectedDate(new Date())
-                    setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))
-                  }}
-                  className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-colors"
-                  style={{
-                    background: 'rgba(26,158,160,0.12)',
-                    color: '#1a9ea0',
-                    border: '1px solid rgba(26,158,160,0.25)',
-                  }}
-                >
-                  Today
-                </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.88 }}
-                  onClick={() => setCurrentWeekStart(addWeeks(currentWeekStart, 2))}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-foreground transition-colors cursor-pointer"
-                  style={{ background: 'rgba(26,158,160,0.08)' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </motion.button>
-              </div>
+          {/* Month header */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-800">
+              {format(currentWeekStart, 'MMMM yyyy')}
+            </h3>
+            <div className="flex items-center gap-1.5">
+              <motion.button
+                whileTap={{ scale: 0.88 }}
+                onClick={() => setCurrentWeekStart(subWeeks(currentWeekStart, 2))}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-800 transition-colors cursor-pointer"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.93 }}
+                onClick={() => {
+                  setSelectedDate(new Date())
+                  setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))
+                }}
+                className="px-3 py-1 rounded-xl text-sm font-medium cursor-pointer transition-colors"
+                style={{
+                  background: 'rgba(26,158,160,0.10)',
+                  color: '#1a9ea0',
+                }}
+              >
+                Today
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.88 }}
+                onClick={() => setCurrentWeekStart(addWeeks(currentWeekStart, 2))}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-800 transition-colors cursor-pointer"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </motion.button>
             </div>
+          </div>
 
-            {/* Day grid */}
-            <div className="grid grid-cols-7 gap-1.5">
-              {weekDays.map((day) => {
-                const selected = isSameDay(day, selectedDate)
-                const today = isToday(day)
-                return (
-                  <motion.button
-                    key={day.toISOString()}
-                    whileTap={{ scale: 0.88 }}
-                    onClick={() => setSelectedDate(day)}
-                    className="flex flex-col items-center py-2.5 rounded-2xl transition-all cursor-pointer"
-                    style={
-                      selected
-                        ? { background: '#1a9ea0', color: 'white', boxShadow: '0 4px 12px rgba(26,158,160,0.40)' }
-                        : today
-                        ? { background: 'rgba(26,158,160,0.10)', border: '1.5px solid rgba(26,158,160,0.35)', color: 'inherit' }
-                        : { background: 'rgba(26,158,160,0.04)', border: '1px solid rgba(26,158,160,0.10)', color: 'inherit' }
-                    }
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-2">
+            {weekDays.map((day) => {
+              const selected = isSameDay(day, selectedDate)
+              const hasAttendance = allAttendance.some(
+                (a) => a.date === format(day, 'yyyy-MM-dd') && a.status !== 'Cancelled'
+              )
+              return (
+                <motion.button
+                  key={day.toISOString()}
+                  whileTap={{ scale: 0.88 }}
+                  onClick={() => setSelectedDate(day)}
+                  className={`flex flex-col items-center py-2.5 rounded-2xl transition-all cursor-pointer ${
+                    !selected ? 'border border-slate-100' : ''
+                  }`}
+                  style={
+                    selected
+                      ? {
+                          background: '#1a9ea0',
+                          color: 'white',
+                          boxShadow: '0 4px 12px rgba(26,158,160,0.20)',
+                        }
+                      : { background: 'transparent', color: '#1e293b' }
+                  }
+                >
+                  <span
+                    className="text-[9px] font-semibold mb-1 tracking-wide"
+                    style={{ opacity: selected ? 0.8 : 0.5 }}
                   >
-                    <span
-                      className="text-[9px] font-semibold mb-1 tracking-wide"
-                      style={{ opacity: selected ? 0.8 : 0.5 }}
-                    >
-                      {format(day, 'EEEEE')}
-                    </span>
-                    <span className="text-sm font-bold leading-none">{format(day, 'd')}</span>
-                  </motion.button>
-                )
-              })}
-            </div>
+                    {format(day, 'EEEEE')}
+                  </span>
+                  <span className="text-sm font-bold leading-none">
+                    {format(day, 'd')}
+                  </span>
+                  {/* The Attendance Dot */}
+                  {hasAttendance && (
+                    <div
+                      className="w-1 h-1 rounded-full mt-1"
+                      style={{ background: selected ? 'white' : '#1a9ea0' }}
+                    />
+                  )}
+                </motion.button>
+              )
+            })}
           </div>
         </motion.div>
 
