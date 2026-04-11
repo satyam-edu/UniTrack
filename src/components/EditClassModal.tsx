@@ -28,6 +28,7 @@ interface TimetableSlot {
     subject_name: string
     subject_code: string
     type: string
+    faculty_name?: string
   }
 }
 
@@ -40,8 +41,6 @@ interface Props {
 export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
-  const [fetchingSubjects, setFetchingSubjects] = useState(true)
-  const [subjects, setSubjects] = useState<Subject[]>([])
   const [error, setError] = useState('')
 
   // Truncate from "HH:MM:SS" back to "HH:MM" for HTML time inputs
@@ -51,7 +50,6 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
   }
 
   const [form, setForm] = useState({
-    subject_id: slot.subject_id,
     day_of_week: slot.day_of_week,
     start_time: formatForInput(slot.start_time),
     end_time: formatForInput(slot.end_time),
@@ -72,29 +70,6 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-
-  const loadSubjects = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
-      onClose()
-      return
-    }
-
-    const { data } = await supabase
-      .from('subjects')
-      .select('id, subject_name, subject_code')
-      .eq('user_id', session.user.id)
-      .order('subject_name', { ascending: true })
-
-    if (data && data.length > 0) {
-      setSubjects(data)
-    }
-    setFetchingSubjects(false)
-  }, [onClose])
-
-  useEffect(() => {
-    loadSubjects()
-  }, [loadSubjects])
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -138,10 +113,10 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
         return
       }
 
+      // Update Timetable record
       const { error: updateError } = await supabase
         .from('timetable')
         .update({
-          subject_id: form.subject_id,
           day_of_week: form.day_of_week,
           start_time: newStart,
           end_time: newEnd,
@@ -187,37 +162,28 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
             </button>
           </div>
 
-          {/* Loading subjects */}
-          {fetchingSubjects ? (
-            <div className="flex justify-center py-8">
-              <svg className="animate-spin h-7 w-7 text-accent" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Error */}
-              {error && (
-                <div className="mb-4 rounded-xl px-4 py-3 text-sm text-red-600 bg-red-50 border border-red-200">
-                  {error}
-                </div>
-              )}
-
-              {/* Subject */}
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">
-                  Subject <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="subject_id" required value={form.subject_id} onChange={handleChange}
-                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
-                >
-                  {subjects.map((sub) => (
-                    <option key={sub.id} value={sub.id}>{sub.subject_code} – {sub.subject_name}</option>
-                  ))}
-                </select>
+          {/* Content */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Error */}
+            {error && (
+              <div className="mb-4 rounded-xl px-4 py-3 text-sm text-red-600 bg-red-50 border border-red-200">
+                {error}
               </div>
+            )}
+
+            {/* Read-only Subject Info */}
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-2">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
+              <p className="font-bold text-slate-800 text-base">{slot.subject.subject_name}</p>
+              <div className="flex gap-2 mt-2">
+                <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-accent/10 text-accent border border-accent/20">
+                  {slot.subject.subject_code}
+                </span>
+                <span className="text-xs font-medium text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded-md">
+                  {slot.subject.type}
+                </span>
+              </div>
+            </div>
 
               {/* Day */}
               <div>
@@ -272,8 +238,7 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
                   {loading ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>
-            </form>
-          )}
+          </form>
         </div>
       </motion.div>
     </div>

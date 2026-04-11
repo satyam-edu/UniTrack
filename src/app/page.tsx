@@ -445,21 +445,25 @@ export default function HomePage() {
               const hasAttendance = allAttendance.some(
                 (a) => a.date === format(day, 'yyyy-MM-dd') && a.status !== 'Cancelled'
               )
+              const today = new Date()
+              today.setHours(0, 0, 0, 0)
+              const isFuture = day > today
+
               return (
                 <motion.button
                   key={day.toISOString()}
                   whileTap={{ scale: 0.88 }}
                   onClick={() => setSelectedDate(day)}
-                  className={`flex flex-col items-center py-2.5 rounded-2xl transition-all cursor-pointer ${
-                    !selected ? 'border border-slate-100' : ''
-                  }`}
+                  className={`flex flex-col items-center py-2.5 rounded-2xl transition-all cursor-pointer ${isFuture && !selected ? 'opacity-60' : ''
+                    } ${!selected ? 'border border-slate-100' : ''
+                    }`}
                   style={
                     selected
                       ? {
-                          background: '#1a9ea0',
-                          color: 'white',
-                          boxShadow: '0 4px 12px rgba(26,158,160,0.20)',
-                        }
+                        background: '#1a9ea0',
+                        color: 'white',
+                        boxShadow: '0 4px 12px rgba(26,158,160,0.20)',
+                      }
                       : { background: 'transparent', color: '#1e293b' }
                   }
                 >
@@ -553,7 +557,7 @@ export default function HomePage() {
                 initial={false}
                 animate={scheduleOpen
                   ? { height: 'auto', opacity: 1 }
-                  : { height: 0,      opacity: 0 }
+                  : { height: 0, opacity: 0 }
                 }
                 transition={{ duration: 0.2 }}
                 style={{ overflow: 'hidden' }}
@@ -561,19 +565,22 @@ export default function HomePage() {
                 <div className="space-y-3 pb-0.5">
                   {slotsToday.map((slot, i) => {
                     const status = slot.attendanceRecord?.status
+                    const today = new Date()
+                    today.setHours(0, 0, 0, 0)
+                    const isFutureDate = selectedDate > today
 
                     /* ── Card tints per-status ── */
                     const cardBorder =
-                      status === 'Present'   ? 'rgba(34, 197, 94,  0.45)' :
-                      status === 'Absent'    ? 'rgba(239, 68, 68,  0.40)' :
-                      status === 'Cancelled' ? 'rgba(100,116,139,  0.25)' :
-                                              'rgba(255,255,255,  0.55)'
+                      status === 'Present' ? 'rgba(34, 197, 94,  0.45)' :
+                        status === 'Absent' ? 'rgba(239, 68, 68,  0.40)' :
+                          status === 'Cancelled' ? 'rgba(100,116,139,  0.25)' :
+                            'rgba(255,255,255,  0.55)'
 
                     const cardBg =
-                      status === 'Present'   ? 'rgba(34, 197, 94,  0.08)' :
-                      status === 'Absent'    ? 'rgba(239, 68, 68,  0.07)' :
-                      status === 'Cancelled' ? 'rgba(100,116,139,  0.05)' :
-                                              'rgba(255,255,255,  0.78)'
+                      status === 'Present' ? 'rgba(34, 197, 94,  0.08)' :
+                        status === 'Absent' ? 'rgba(239, 68, 68,  0.07)' :
+                          status === 'Cancelled' ? 'rgba(100,116,139,  0.05)' :
+                            'rgba(255,255,255,  0.78)'
 
                     return (
                       <motion.div
@@ -621,7 +628,7 @@ export default function HomePage() {
 
                           {/* Undo button — only when a status is selected */}
                           <AnimatePresence>
-                            {status && (
+                            {status && !isFutureDate && (
                               <button
                                 key="undo"
                                 onClick={() => handleUndoAttendance(slot)}
@@ -629,13 +636,13 @@ export default function HomePage() {
                                 className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full cursor-pointer transition-all duration-200 active:scale-95"
                                 style={{
                                   background:
-                                    status === 'Present'   ? 'rgba(34,197,94,0.15)'  :
-                                    status === 'Absent'    ? 'rgba(239,68,68,0.15)'  :
-                                                            'rgba(100,116,139,0.15)',
+                                    status === 'Present' ? 'rgba(34,197,94,0.15)' :
+                                      status === 'Absent' ? 'rgba(239,68,68,0.15)' :
+                                        'rgba(100,116,139,0.15)',
                                   color:
-                                    status === 'Present'   ? '#16a34a' :
-                                    status === 'Absent'    ? '#dc2626' :
-                                                            '#475569',
+                                    status === 'Present' ? '#16a34a' :
+                                      status === 'Absent' ? '#dc2626' :
+                                        '#475569',
                                 }}
                               >
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -649,14 +656,14 @@ export default function HomePage() {
 
                         {/* Action row */}
                         <div
-                          className="mx-3 mb-3 rounded-2xl p-1 grid grid-cols-3 gap-1"
+                          className={`mx-3 mb-3 rounded-2xl p-1 grid grid-cols-3 gap-1 ${isFutureDate ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                           style={{ background: 'rgba(26,158,160,0.06)', border: '1px solid rgba(26,158,160,0.12)' }}
                         >
                           {(
                             [
-                              { label: 'Present',   value: 'Present'   as const, activeColor: '#16a34a', activeShadow: 'rgba(22,163,74,0.28)'  },
-                              { label: 'Absent',    value: 'Absent'    as const, activeColor: '#dc2626', activeShadow: 'rgba(220,38,38,0.28)'  },
-                              { label: 'Cancelled', value: 'Cancelled' as const, activeColor: '#475569', activeShadow: 'rgba(71,85,105,0.20)'  },
+                              { label: 'Present', value: 'Present' as const, activeColor: '#16a34a', activeShadow: 'rgba(22,163,74,0.28)' },
+                              { label: 'Absent', value: 'Absent' as const, activeColor: '#dc2626', activeShadow: 'rgba(220,38,38,0.28)' },
+                              { label: 'Cancelled', value: 'Cancelled' as const, activeColor: '#475569', activeShadow: 'rgba(71,85,105,0.20)' },
                             ] as const
                           ).map(({ label, value, activeColor, activeShadow }) => {
                             const isActive = status === value
@@ -664,6 +671,7 @@ export default function HomePage() {
                               <button
                                 key={value}
                                 onClick={() => handleMarkAttendance(slot, value)}
+                                disabled={isFutureDate}
                                 className="py-2.5 rounded-xl text-xs font-bold transition-all duration-200 active:scale-95 cursor-pointer"
                                 style={
                                   isActive
