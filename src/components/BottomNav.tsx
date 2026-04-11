@@ -8,9 +8,9 @@ const navItems = [
     href: '/',
     label: 'Home',
     icon: (active: boolean) => (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <polyline points="9 22 9 12 15 12 15 22" />
+        <polyline points="9 22 9 12 15 12 15 22" fill={active ? 'white' : 'none'} stroke={active ? 'currentColor' : 'currentColor'} />
       </svg>
     ),
   },
@@ -52,22 +52,26 @@ export default function BottomNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-[480px] bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 px-2 py-2">
-      <div className="flex justify-between items-center w-full">
+    <nav className="fixed bottom-4 z-50 w-[calc(100%-2rem)] max-w-md mx-auto left-0 right-0">
+      <div
+        className="flex justify-between items-center w-full px-6 py-4 rounded-[2.5rem] bg-white/95 backdrop-blur-md border border-slate-200/60"
+        style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}
+      >
         {navItems.map((item) => {
           const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 px-4 py-1.5 rounded-2xl transition-all duration-300 ${
+              className={`flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-full transition-all duration-200 ${
                 isActive
-                  ? 'bg-[#E8F1F2] text-teal-700 shadow-sm'
-                  : 'text-slate-500 hover:text-teal-600 bg-transparent'
+                  ? 'bg-teal-500 text-white'
+                  : 'text-slate-400 hover:text-teal-500'
               }`}
+              style={isActive ? { boxShadow: '0 4px 14px rgba(20,184,166,0.30)' } : undefined}
             >
               {item.icon(isActive)}
-              <span className={`text-[10px] leading-none font-bold ${isActive ? 'text-teal-700' : 'text-slate-500'}`}>
+              <span className={`text-[10px] leading-none font-bold ${isActive ? 'text-white' : 'text-slate-400'}`}>
                 {item.label}
               </span>
             </Link>

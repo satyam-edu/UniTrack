@@ -8,6 +8,7 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import AddClassModal from '@/components/AddClassModal'
 import EditClassModal from '@/components/EditClassModal'
 import ScheduleClassModal from '@/components/ScheduleClassModal'
+import UploadTimetableModal from '@/components/UploadTimetableModal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ export default function TimetablePage() {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [classToEdit, setClassToEdit] = useState<TimetableSlot | null>(null)
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false)
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const actionMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Data loading ─────────────────────────────────────────────────────────────
@@ -111,8 +113,7 @@ export default function TimetablePage() {
 
   function handleUploadTimetable() {
     setIsActionMenuOpen(false)
-    console.log('[V2] Upload Timetable — placeholder')
-    // TODO: open image-upload modal
+    setIsUploadModalOpen(true)
   }
 
   function handleAddManually() {
@@ -261,12 +262,7 @@ export default function TimetablePage() {
 
         {/* ── Day Selector ───────────────────────────────────────────────────── */}
         <div
-          className="flex items-center gap-1 mb-6 p-1.5 rounded-2xl overflow-x-auto scrollbar-hide bg-white/60 border border-white/55"
-          style={{
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            boxShadow: '0 2px 12px rgba(26,158,160,0.08)',
-          }}
+          className="flex items-center gap-1 mb-6 p-1.5 rounded-2xl overflow-x-auto scrollbar-hide bg-white border border-slate-200/60"
         >
           {DAYS.map(({ full, short }) => {
             const isActive = selectedDay === full
@@ -276,18 +272,15 @@ export default function TimetablePage() {
               <button
                 key={full}
                 onClick={() => setSelectedDay(full)}
-                className="relative flex-1 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap min-w-[44px] flex flex-col items-center gap-0.5"
-                style={{ color: isActive ? '#fff' : undefined }}
+                className="relative flex-1 py-2 rounded-full text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap min-w-[44px] flex flex-col items-center gap-0.5"
+                style={{ color: isActive ? '#fff' : '#64748b' }}
               >
                 {/* Animated pill background */}
                 {isActive && (
                   <motion.div
                     layoutId="activeDay"
-                    className="absolute inset-0 rounded-xl"
-                    style={{
-                      background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
-                      boxShadow: '0 4px 12px rgba(26,158,160,0.38)',
-                    }}
+                    className="absolute inset-0 rounded-full bg-teal-500"
+                    style={{ boxShadow: '0 4px 14px rgba(20,184,166,0.35)' }}
                     transition={{ type: 'spring', damping: 26, stiffness: 300 }}
                   />
                 )}
@@ -313,11 +306,7 @@ export default function TimetablePage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.25 }}
-              className="flex flex-col items-center justify-center py-16 rounded-3xl mt-4 bg-white/55 border border-dashed border-teal-600/25"
-              style={{
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-              }}
+              className="flex flex-col items-center justify-center py-16 rounded-3xl mt-4 bg-white border border-dashed border-teal-300/50"
             >
               <div
                 className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
@@ -384,12 +373,8 @@ export default function TimetablePage() {
 
                     {/* Glass card */}
                     <div
-                      className="flex-1 rounded-2xl overflow-hidden bg-white/80 border border-white/60"
-                      style={{
-                        backdropFilter: 'blur(20px)',
-                        WebkitBackdropFilter: 'blur(20px)',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-                      }}
+                      className="flex-1 rounded-3xl overflow-hidden bg-white border border-slate-200/60"
+                      style={{ borderLeft: slot.subject.type === 'Lab' ? '4px solid #a855f7' : '4px solid #14b8a6' }}
                     >
                       <div className="p-4 flex items-start justify-between gap-3">
                         {/* Left: Subject info */}
@@ -400,17 +385,16 @@ export default function TimetablePage() {
 
                           {/* Badges row */}
                           <div className="flex items-center gap-2 mb-2">
-                            <span
-                              className="text-xs font-bold px-2 py-0.5 rounded-md"
-                              style={{
-                                background: 'rgba(26,158,160,0.12)',
-                                color: '#1a9ea0',
-                                border: '1px solid rgba(26,158,160,0.20)',
-                              }}
-                            >
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-600">
                               {slot.subject.subject_code}
                             </span>
-                            <span className="text-xs font-medium text-text-muted">
+                            <span
+                              className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                              style={slot.subject.type === 'Lab'
+                                ? { background: 'rgba(168,85,247,0.10)', color: '#7c3aed' }
+                                : { background: 'rgba(20,184,166,0.10)', color: '#0d9488' }
+                              }
+                            >
                               {slot.subject.type}
                             </span>
                           </div>
@@ -490,7 +474,7 @@ export default function TimetablePage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   onClick={() => setIsScheduleModalOpen(true)}
-                  className="w-full border-2 border-dashed border-slate-200 bg-slate-50/50 text-slate-400 rounded-2xl py-3 text-sm font-medium hover:bg-slate-100 hover:text-accent hover:border-accent/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full border-2 border-dashed border-slate-200/80 bg-white text-slate-400 rounded-2xl py-3 text-sm font-medium hover:bg-slate-50 hover:text-teal-600 hover:border-teal-300/60 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19" />
@@ -530,6 +514,10 @@ export default function TimetablePage() {
           />
         )}
       </AnimatePresence>
+
+      {isUploadModalOpen && (
+        <UploadTimetableModal onClose={() => setIsUploadModalOpen(false)} />
+      )}
     </ProtectedRoute>
   )
 }
