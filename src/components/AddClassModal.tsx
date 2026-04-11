@@ -10,32 +10,21 @@ interface Subject {
   subject_code: string
 }
 
-const timeToMins = (time: string) => {
-  const [h, m] = time.split(':').map(Number)
-  return h * 60 + m
-}
-
-const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-
 interface Props {
   onClose: () => void
   onSuccess: () => void
-  initialDay?: string
 }
 
-export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday' }: Props) {
+export default function AddClassModal({ onClose, onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
-  const [fetchingSubjects, setFetchingSubjects] = useState(true)
-  const [subjects, setSubjects] = useState<Subject[]>([])
   const [error, setError] = useState('')
   const overlayRef = useRef<HTMLDivElement>(null)
 
   const [form, setForm] = useState({
-    subject_id: '',
-    day_of_week: initialDay,
-    start_time: '09:00',
-    end_time: '10:00',
-    room_location: '',
+    subject_name: '',
+    subject_code: '',
+    faculty_name: '',
+    type: 'Theory',
   })
 
   useEffect(() => {
@@ -51,31 +40,6 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const loadSubjects = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-
-    if (!session) {
-      onClose()
-      return
-    }
-
-    const { data } = await supabase
-      .from('subjects')
-      .select('id, subject_name, subject_code')
-      .eq('user_id', session.user.id)
-      .order('subject_name', { ascending: true })
-
-    if (data && data.length > 0) {
-      setSubjects(data)
-      setForm((prev) => ({ ...prev, subject_id: data[0].id }))
-    }
-    setFetchingSubjects(false)
-  }, [onClose])
-
-  useEffect(() => {
-    loadSubjects()
-  }, [loadSubjects])
-
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
@@ -84,8 +48,8 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
     e.preventDefault()
     setError('')
 
-    if (timeToMins(form.start_time) >= timeToMins(form.end_time)) {
-      setError('End time must be after the start time.')
+    if (!form.subject_name.trim() || !form.subject_code.trim()) {
+      setError('Subject Name and Subject Code are required.')
       return
     }
 
@@ -99,42 +63,44 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
         return
       }
 
-      const newStart = `${form.start_time}:00`
-      const newEnd = `${form.end_time}:00`
-
-      const { data: existingSlots, error: fetchError } = await supabase
-        .from('timetable')
-        .select('start_time, end_time')
+      // Check for duplicate subject code or name
+      const { data: existingSubjects, error: fetchError } = await supabase
+        .from('subjects')
+        .select('subject_code, subject_name')
         .eq('user_id', session.user.id)
-        .eq('day_of_week', form.day_of_week)
 
       if (fetchError) throw fetchError
 
-      const hasOverlap = existingSlots?.some((slot) => {
-        return newStart < slot.end_time && newEnd > slot.start_time
-      })
+      const newCode = form.subject_code.trim().toLowerCase()
+      const newName = form.subject_name.trim().toLowerCase()
 
-      if (hasOverlap) {
-        setError('You already have a class scheduled during this time slot.')
+      const isDuplicate = existingSubjects?.some(
+        (sub) => sub.subject_code.toLowerCase() === newCode || sub.subject_name.toLowerCase() === newName
+      )
+
+      if (isDuplicate) {
+        setError('A subject with this name or code already exists.')
         setLoading(false)
         return
       }
 
-      const { error: insertError } = await supabase.from('timetable').insert({
-        user_id: session.user.id,
-        subject_id: form.subject_id,
-        day_of_week: form.day_of_week,
-        start_time: newStart,
-        end_time: newEnd,
-        room_location: form.room_location ? form.room_location : null,
-      })
+      // 1. Create the Subject
+      const { error: subjectError } = await supabase
+        .from('subjects')
+        .insert({
+          user_id: session.user.id,
+          subject_name: form.subject_name.trim(),
+          subject_code: form.subject_code.trim(),
+          faculty_name: form.faculty_name.trim() || null,
+          type: form.type,
+        })
 
-      if (insertError) throw insertError
+      if (subjectError) throw subjectError
 
       onSuccess()
       onClose()
     } catch (err: any) {
-      setError(err.message || 'An error occurred while adding the slot.')
+      setError(err.message || 'An error occurred while adding the subject.')
     } finally {
       setLoading(false)
     }
@@ -155,7 +121,7 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
       >
         <div className="px-6 pt-4 pb-6 space-y-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold tracking-tight text-slate-900">New Class</h2>
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">New Subject</h2>
             <button
               onClick={onClose}
               aria-label="Close modal"
@@ -168,124 +134,79 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
             </button>
           </div>
 
-          {fetchingSubjects ? (
-            <div className="flex justify-center py-8">
-              <svg className="animate-spin h-7 w-7 text-accent" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="modal-subject_name" className="block text-sm font-medium text-slate-600 mb-1.5 flex justify-between">
+                <span>Subject Name <span className="text-red-500">*</span></span>
+              </label>
+              <input
+                id="modal-subject_name"
+                name="subject_name"
+                type="text"
+                required
+                placeholder="e.g. Computational Methods"
+                value={form.subject_name}
+                onChange={handleChange}
+                className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+              />
             </div>
-          ) : subjects.length === 0 ? (
-            <div className="py-6 text-center space-y-3">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-accent/10 mb-1">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-              </div>
-              <p className="text-sm text-slate-600">
-                You must add a subject before scheduling classes.
-              </p>
-              <button
-                onClick={onClose}
-                className="inline-block bg-accent hover:bg-accent-hover text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-accent-glow cursor-pointer"
-              >
-                Go add a Subject first
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
-                  {error}
-                </div>
-              )}
 
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="modal-subject_id" className="block text-sm font-medium text-slate-600 mb-1.5">
-                  Subject <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="modal-subject_id"
-                  name="subject_id"
-                  required
-                  value={form.subject_id}
-                  onChange={handleChange}
-                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
-                >
-                  {subjects.map((sub) => (
-                     <option key={sub.id} value={sub.id}>{sub.subject_code} – {sub.subject_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="modal-day_of_week" className="block text-sm font-medium text-slate-600 mb-1.5">
-                  Day <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="modal-day_of_week"
-                  name="day_of_week"
-                  required
-                  value={form.day_of_week}
-                  onChange={handleChange}
-                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
-                >
-                  {daysOfWeek.map((day) => (
-                    <option key={day} value={day}>{day}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="modal-start_time" className="block text-sm font-medium text-slate-600 mb-1.5">
-                    Start <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="modal-start_time"
-                    name="start_time"
-                    type="time"
-                    required
-                    value={form.start_time}
-                    onChange={handleChange}
-                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="modal-end_time" className="block text-sm font-medium text-slate-600 mb-1.5">
-                    End <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="modal-end_time"
-                    name="end_time"
-                    type="time"
-                    required
-                    value={form.end_time}
-                    onChange={handleChange}
-                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="modal-room_location" className="block text-sm font-medium text-slate-600 mb-1.5 flex justify-between">
-                  <span>Room / Location</span>
-                  <span className="text-slate-400 text-xs">Optional</span>
+                <label htmlFor="modal-subject_code" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Subject Code <span className="text-red-500">*</span>
                 </label>
                 <input
-                  id="modal-room_location"
-                  name="room_location"
+                  id="modal-subject_code"
+                  name="subject_code"
                   type="text"
-                  placeholder="e.g. Room 402, Block A"
-                  value={form.room_location}
+                  required
+                  placeholder="e.g. ICT254"
+                  value={form.subject_code}
                   onChange={handleChange}
                   className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
                 />
               </div>
+              <div>
+                <label htmlFor="modal-type" className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Category <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="modal-type"
+                  name="type"
+                  required
+                  value={form.type}
+                  onChange={handleChange}
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
+                >
+                  <option value="Theory">Theory</option>
+                  <option value="Lab">Lab</option>
+                </select>
+              </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label htmlFor="modal-faculty_name" className="block text-sm font-medium text-slate-600 mb-1.5">
+                Faculty Name
+              </label>
+              <input
+                id="modal-faculty_name"
+                name="faculty_name"
+                type="text"
+                placeholder="e.g. Dr. Smith"
+                value={form.faculty_name}
+                onChange={handleChange}
+                className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
                 <button
                   type="button"
                   onClick={onClose}
@@ -307,12 +228,11 @@ export default function AddClassModal({ onClose, onSuccess, initialDay = 'Monday
                       Saving…
                     </span>
                   ) : (
-                    'Add Class'
+                    'Add Subject'
                   )}
                 </button>
               </div>
-            </form>
-          )}
+          </form>
         </div>
       </motion.div>
     </div>

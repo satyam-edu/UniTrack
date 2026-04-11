@@ -55,12 +55,15 @@ export default function EditSubjectModal({ subject, onClose, onSuccess, existing
     setError('')
 
     // Duplicate check (Exclude Self)
+    const newCode = form.subject_code.trim().toLowerCase()
+    const newName = form.subject_name.trim().toLowerCase()
+
     const isDuplicate = existingSubjects.some(
-      (sub) => sub.subject_code.toLowerCase() === form.subject_code.trim().toLowerCase() && sub.id !== subject.id
+      (sub) => (sub.subject_code.toLowerCase() === newCode || sub.subject_name.toLowerCase() === newName) && sub.id !== subject.id
     )
 
     if (isDuplicate) {
-      setError('This subject code already exists!')
+      setError('Another subject with this name or code already exists.')
       return
     }
 
@@ -156,15 +159,8 @@ export default function EditSubjectModal({ subject, onClose, onSuccess, existing
                   value={form.subject_code}
                   onChange={handleChange}
                   placeholder="e.g. CS201"
-                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all ${
-                    error === 'This subject code already exists!' ? 'border-red-500 ring-red-500/20' : 'border-slate-200'
-                  }`}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all"
                 />
-                {error === 'This subject code already exists!' && (
-                  <p className="text-red-500 text-xs mt-1 font-medium ml-1">
-                    {error}
-                  </p>
-                )}
               </div>
 
               <div>

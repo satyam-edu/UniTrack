@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import AddSubjectModal from '@/components/AddSubjectModal'
 import EditSubjectModal from '@/components/EditSubjectModal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -137,7 +136,6 @@ export default function SubjectsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [targetAttendance, setTargetAttendance] = useState<number>(75) // safe fallback
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [subjectToEdit, setSubjectToEdit] = useState<Subject | null>(null)
@@ -281,10 +279,6 @@ export default function SubjectsPage() {
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Subjects</h1>
-            <div
-              className="h-10 w-20 rounded-2xl animate-pulse"
-              style={{ background: 'rgba(26,158,160,0.15)' }}
-            />
           </div>
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-3 mb-6">
@@ -323,21 +317,6 @@ export default function SubjectsPage() {
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Subjects</h1>
-          <motion.button
-            whileTap={{ scale: 0.93 }}
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer shadow-lg"
-            style={{
-              background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
-              boxShadow: '0 4px 14px rgba(26,158,160,0.40)',
-            }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Add
-          </motion.button>
         </div>
 
         {/* ── Stats row ──────────────────────────────────────────────────────── */}
@@ -394,7 +373,7 @@ export default function SubjectsPage() {
               </svg>
             </div>
             <p className="font-semibold text-foreground mb-1">No subjects yet</p>
-            <p className="text-sm text-text-muted">Tap &quot;+ Add&quot; to create your first subject.</p>
+            <p className="text-sm text-text-muted">Go to Timetable to add your first subject.</p>
           </motion.div>
         )}
 
@@ -622,14 +601,6 @@ export default function SubjectsPage() {
       </motion.main>
 
       <BottomNav />
-
-      {isModalOpen && (
-        <AddSubjectModal
-          onClose={() => setIsModalOpen(false)}
-          onSuccess={() => { setIsModalOpen(false); loadSubjects() }}
-          existingSubjects={subjects}
-        />
-      )}
 
       <AnimatePresence>
         {isEditModalOpen && subjectToEdit && (

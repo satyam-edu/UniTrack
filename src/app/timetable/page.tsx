@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import Link from 'next/link'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AddClassModal from '@/components/AddClassModal'
 import EditClassModal from '@/components/EditClassModal'
+import ScheduleClassModal from '@/components/ScheduleClassModal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,7 @@ interface TimetableSlot {
     subject_name: string
     subject_code: string
     type: string
+    faculty_name?: string
   }
 }
 
@@ -76,7 +77,10 @@ export default function TimetablePage() {
   const [selectedDay, setSelectedDay] = useState<string>('Monday')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [classToEdit, setClassToEdit] = useState<TimetableSlot | null>(null)
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false)
+  const actionMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
@@ -86,7 +90,7 @@ export default function TimetablePage() {
 
     const { data, error } = await supabase
       .from('timetable')
-      .select('id, subject_id, day_of_week, start_time, end_time, room_location, subject:subjects(subject_name, subject_code, type)')
+      .select('id, subject_id, day_of_week, start_time, end_time, room_location, subject:subjects(subject_name, subject_code, type, faculty_name)')
       .eq('user_id', session.user.id)
       .order('start_time', { ascending: true })
 
@@ -102,6 +106,19 @@ export default function TimetablePage() {
   }, [])
 
   useEffect(() => { loadTimetable() }, [loadTimetable])
+
+  // ── Action menu handlers ──────────────────────────────────────────────────────
+
+  function handleUploadTimetable() {
+    setIsActionMenuOpen(false)
+    console.log('[V2] Upload Timetable — placeholder')
+    // TODO: open image-upload modal
+  }
+
+  function handleAddManually() {
+    setIsActionMenuOpen(false)
+    setIsModalOpen(true)
+  }
 
   // ── Delete ───────────────────────────────────────────────────────────────────
 
@@ -140,20 +157,106 @@ export default function TimetablePage() {
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Timetable</h1>
-          <motion.button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer transition-all duration-200 active:scale-95 shadow-lg"
-            style={{
-              background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
-              boxShadow: '0 4px 14px rgba(26,158,160,0.40)',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Add Class
-          </motion.button>
+
+          {/* ── Add button + dropdown ─────────────────────────────────────────── */}
+          <div ref={actionMenuRef} className="relative">
+            <motion.button
+              id="timetable-add-btn"
+              onClick={() => setIsActionMenuOpen((o) => !o)}
+              whileTap={{ scale: 0.93 }}
+              className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer shadow-lg"
+              style={{
+                background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+                boxShadow: '0 4px 14px rgba(26,158,160,0.40)',
+              }}
+            >
+              <motion.svg
+                width="16" height="16" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2.8"
+                strokeLinecap="round" strokeLinejoin="round"
+                animate={{ rotate: isActionMenuOpen ? 45 : 0 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </motion.svg>
+              Add
+            </motion.button>
+
+            {/* ── Action dropdown ───────────────────────────────────────────── */}
+            <AnimatePresence>
+              {isActionMenuOpen && (
+                <>
+                  {/* Invisible backdrop to close on outside click */}
+                  <div
+                    className="fixed inset-0 z-30"
+                    onClick={() => setIsActionMenuOpen(false)}
+                  />
+
+                  <motion.div
+                    id="timetable-action-menu"
+                    initial={{ opacity: 0, scale: 0.92, y: -6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.92, y: -6 }}
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    className="absolute right-0 top-full mt-2 z-40 w-56 rounded-2xl overflow-hidden"
+                    style={{
+                      background: 'rgba(255,255,255,0.88)',
+                      backdropFilter: 'blur(24px)',
+                      WebkitBackdropFilter: 'blur(24px)',
+                      border: '1px solid rgba(255,255,255,0.70)',
+                      boxShadow: '0 12px 36px rgba(0,0,0,0.12), 0 2px 8px rgba(26,158,160,0.10)',
+                    }}
+                  >
+                    {/* Upload Timetable */}
+                    <button
+                      id="action-upload-timetable"
+                      onClick={handleUploadTimetable}
+                      className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-teal-50/80 transition-colors cursor-pointer border-b border-slate-100/80"
+                    >
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                        style={{ background: 'rgba(26,158,160,0.12)' }}
+                      >
+                        {/* Sparkles / magic icon */}
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/>
+                          <path d="M5 18l1 2 2-1-1-2-2 1z"/>
+                          <path d="M19 15l1 2 2-1-1-2-2 1z"/>
+                        </svg>
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-slate-700 leading-snug">Upload Timetable</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Auto-extract from image</p>
+                      </div>
+                    </button>
+
+                    {/* Add Manually */}
+                    <button
+                      id="action-add-manually"
+                      onClick={handleAddManually}
+                      className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-teal-50/80 transition-colors cursor-pointer"
+                    >
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                        style={{ background: 'rgba(100,116,139,0.10)' }}
+                      >
+                        {/* Pen icon */}
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9"/>
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                        </svg>
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-slate-700 leading-snug">Add Manually</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Enter details yourself</p>
+                      </div>
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
         {/* ── Day Selector ───────────────────────────────────────────────────── */}
@@ -227,8 +330,13 @@ export default function TimetablePage() {
                   <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
               </div>
-              <p className="font-semibold text-foreground mb-1">No classes on {selectedDay}</p>
-              <p className="text-sm text-text-muted">Tap "+ Add Class" to schedule one.</p>
+              <p className="font-semibold text-foreground mb-3">No classes on {selectedDay}</p>
+              <button
+                onClick={() => setIsScheduleModalOpen(true)}
+                className="bg-accent hover:bg-accent-hover text-white text-sm font-semibold px-6 py-2.5 rounded-xl shadow-lg shadow-accent-glow cursor-pointer transition-colors"
+              >
+                + Schedule Class
+              </button>
             </motion.div>
           ) : (
             <motion.div
@@ -375,6 +483,22 @@ export default function TimetablePage() {
                   </motion.div>
                 ))}
               </div>
+              
+              {/* Inline Add Class Button */}
+              <div className="ml-[34px] mt-6">
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  onClick={() => setIsScheduleModalOpen(true)}
+                  className="w-full border-2 border-dashed border-slate-200 bg-slate-50/50 text-slate-400 rounded-2xl py-3 text-sm font-medium hover:bg-slate-100 hover:text-accent hover:border-accent/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Add class to {selectedDay}
+                </motion.button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -386,7 +510,14 @@ export default function TimetablePage() {
         <AddClassModal
           onClose={() => setIsModalOpen(false)}
           onSuccess={() => { loadTimetable() }}
-          initialDay={selectedDay}
+        />
+      )}
+
+      {isScheduleModalOpen && (
+        <ScheduleClassModal
+          activeDay={selectedDay}
+          onClose={() => setIsScheduleModalOpen(false)}
+          onSuccess={() => { loadTimetable() }}
         />
       )}
 
