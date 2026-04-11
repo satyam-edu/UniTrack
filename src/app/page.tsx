@@ -276,7 +276,7 @@ export default function HomePage() {
         variants={pageVariants}
         initial="hidden"
         animate="visible"
-        className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
+        className="flex-1 flex flex-col px-4 py-6 pb-32 max-w-lg mx-auto w-full"
       >
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -308,23 +308,14 @@ export default function HomePage() {
           variants={attendanceCardVariants}
           initial="hidden"
           animate="visible"
-          className="relative rounded-3xl overflow-hidden mb-6 shadow-xl"
+          className="relative rounded-3xl overflow-hidden mb-6"
           style={{
-            background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 55%, #0a6b70 100%)',
+            background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+            boxShadow: '0 12px 40px rgba(20,184,166,0.28)',
           }}
         >
-          {/* Layered gloss overlay */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.02) 60%, transparent 100%)',
-            }}
-          />
           {/* Decorative blob */}
-          <div
-            className="absolute -right-10 -top-10 w-44 h-44 rounded-full pointer-events-none"
-            style={{ background: 'rgba(255,255,255,0.08)', filter: 'blur(20px)' }}
-          />
+          <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full pointer-events-none" style={{ background: 'rgba(255,255,255,0.10)', filter: 'blur(24px)' }} />
 
           <div className="relative p-5 flex items-center gap-5">
             {/* Ring */}
@@ -395,7 +386,7 @@ export default function HomePage() {
           variants={calendarVariants}
           initial="hidden"
           animate="visible"
-          className="rounded-3xl mb-6 bg-white p-5 shadow-sm border border-slate-100"
+          className="rounded-3xl mb-6 bg-white p-5 border border-slate-200/60"
         >
           {/* Month header */}
           <div className="flex items-center justify-between mb-4">
@@ -454,16 +445,10 @@ export default function HomePage() {
                   key={day.toISOString()}
                   whileTap={{ scale: 0.88 }}
                   onClick={() => setSelectedDate(day)}
-                  className={`flex flex-col items-center py-2.5 rounded-2xl transition-all cursor-pointer ${isFuture && !selected ? 'opacity-60' : ''
-                    } ${!selected ? 'border border-slate-100' : ''
-                    }`}
+                  className={`flex flex-col items-center py-2.5 rounded-full transition-all cursor-pointer ${isFuture && !selected ? 'opacity-50' : ''}`}
                   style={
                     selected
-                      ? {
-                        background: '#1a9ea0',
-                        color: 'white',
-                        boxShadow: '0 4px 12px rgba(26,158,160,0.20)',
-                      }
+                      ? { background: '#14b8a6', color: 'white', boxShadow: '0 4px 14px rgba(20,184,166,0.30)' }
                       : { background: 'transparent', color: '#1e293b' }
                   }
                 >
@@ -478,10 +463,7 @@ export default function HomePage() {
                   </span>
                   {/* The Attendance Dot */}
                   {hasAttendance && (
-                    <div
-                      className="w-1 h-1 rounded-full mt-1"
-                      style={{ background: selected ? 'white' : '#1a9ea0' }}
-                    />
+                    <div className="w-1.5 h-1.5 rounded-full mt-1" style={{ background: selected ? 'white' : '#14b8a6' }} />
                   )}
                 </motion.button>
               )
@@ -503,9 +485,8 @@ export default function HomePage() {
               <span
                 className="text-xs font-semibold px-2.5 py-1 rounded-full"
                 style={{
-                  background: 'rgba(26,158,160,0.12)',
-                  color: '#1a9ea0',
-                  border: '1px solid rgba(26,158,160,0.20)',
+                  background: 'rgba(20,184,166,0.08)',
+                  border: '1px solid rgba(20,184,166,0.18)',
                 }}
               >
                 {slotsToday.length} {slotsToday.length === 1 ? 'class' : 'classes'}
@@ -588,14 +569,13 @@ export default function HomePage() {
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: status === 'Cancelled' ? 0.6 : 1, y: 0 }}
                         transition={{ delay: i * 0.06, type: 'spring' as const, damping: 25 }}
-                        className="rounded-3xl overflow-hidden"
+                        className="rounded-3xl overflow-hidden bg-white border border-slate-200/60"
                         style={{
-                          background: cardBg,
-                          backdropFilter: 'blur(20px)',
-                          WebkitBackdropFilter: 'blur(20px)',
-                          border: `1.5px solid ${cardBorder}`,
-                          boxShadow: '0 4px 20px rgba(0,0,0,0.05), 0 1px 0 rgba(255,255,255,0.8) inset',
-                          willChange: 'transform, opacity',
+                          borderLeft:
+                            status === 'Present'   ? '4px solid #22c55e' :
+                            status === 'Absent'    ? '4px solid #ef4444' :
+                            status === 'Cancelled' ? '4px solid #cbd5e1' :
+                            '4px solid #e2e8f0',
                         }}
                       >
                         {/* Card Body */}
@@ -656,8 +636,8 @@ export default function HomePage() {
 
                         {/* Action row */}
                         <div
-                          className={`mx-3 mb-3 rounded-2xl p-1 grid grid-cols-3 gap-1 ${isFutureDate ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
-                          style={{ background: 'rgba(26,158,160,0.06)', border: '1px solid rgba(26,158,160,0.12)' }}
+                          className={`mx-3 mb-3 rounded-2xl p-1 grid grid-cols-3 gap-1 ${isFutureDate ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
+                          style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
                         >
                           {(
                             [
@@ -675,8 +655,8 @@ export default function HomePage() {
                                 className="py-2.5 rounded-xl text-xs font-bold transition-all duration-200 active:scale-95 cursor-pointer"
                                 style={
                                   isActive
-                                    ? { background: activeColor, color: 'white', boxShadow: `0 3px 10px ${activeShadow}` }
-                                    : { background: 'transparent', color: '#7a93a8' }
+                                    ? { background: activeColor, color: 'white', boxShadow: `0 2px 10px ${activeShadow}` }
+                                    : { background: 'transparent', color: '#94a3b8' }
                                 }
                               >
                                 {label}
