@@ -92,7 +92,8 @@ export async function parseTimetableImage(formData: FormData): Promise<ParseResu
 
   // ── Call Gemini ───────────────────────────────────────────────────────────
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' })
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview', generationConfig: { responseMimeType: "application/json" } })
 
   const prompt = `You are an expert data extraction assistant. Analyze the provided college timetable image and extract the schedule into a strict JSON array.
 
@@ -131,8 +132,8 @@ Return ONLY a valid, raw JSON array (no markdown blockticks like \`\`\`json, no 
   // ── Parse JSON ────────────────────────────────────────────────────────────
   let classes: ExtractedClass[]
   try {
-    const cleaned = rawText.trim().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim()
-    classes = JSON.parse(cleaned)
+    rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim()
+    classes = JSON.parse(rawText)
     if (!Array.isArray(classes)) throw new Error('Response is not an array')
   } catch {
     console.error('[parseTimetableImage] JSON parse error. Raw text:', rawText)
