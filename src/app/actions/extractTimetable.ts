@@ -18,11 +18,11 @@ export interface ExtractedClass {
 }
 
 export type ParseResult =
-  | { success: true;  classes: ExtractedClass[] }
+  | { success: true; classes: ExtractedClass[] }
   | { success: false; error: string }
 
 export type ImportResult =
-  | { success: true;  count: number }
+  | { success: true; count: number }
   | { success: false; error: string }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ export async function parseTimetableImage(formData: FormData): Promise<ParseResu
 
   // ── Call Gemini ───────────────────────────────────────────────────────────
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' })
 
   const prompt = `You are an expert data extraction assistant. Analyze the provided college timetable image and extract the schedule into a strict JSON array.
 
@@ -175,7 +175,7 @@ export async function importConfirmedSchedule(
     const subjectName = cls.subject_name.trim()
     const subjectCode = (cls.subject_code ?? '').trim()
     const startTimeDb = to24HourDb(cls.start_time)
-    const endTimeDb   = to24HourDb(cls.end_time)
+    const endTimeDb = to24HourDb(cls.end_time)
     const subjectType = normaliseType(cls.category)
 
     // ── STEP A: Pool — find or create the subject ──────────────────────────
@@ -198,11 +198,11 @@ export async function importConfirmedSchedule(
       const { data: newSubject, error: subjectInsertError } = await supabaseAdmin
         .from('subjects')
         .insert({
-          user_id:      userId,
+          user_id: userId,
           subject_name: subjectName,
           subject_code: subjectCode || subjectName.slice(0, 10).toUpperCase(),
           faculty_name: cls.faculty_name?.trim() || null,
-          type:         subjectType,
+          type: subjectType,
         })
         .select('id')
         .single()
@@ -231,11 +231,11 @@ export async function importConfirmedSchedule(
     const { error: timetableInsertError } = await supabaseAdmin
       .from('timetable')
       .insert({
-        user_id:       userId,
-        subject_id:    subjectId,
-        day_of_week:   cls.day,
-        start_time:    startTimeDb,
-        end_time:      endTimeDb,
+        user_id: userId,
+        subject_id: subjectId,
+        day_of_week: cls.day,
+        start_time: startTimeDb,
+        end_time: endTimeDb,
         room_location: cls.room?.trim() || null,
       })
 

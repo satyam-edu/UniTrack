@@ -284,6 +284,13 @@ export default function SubjectsPage() {
       }
     })
 
+    enriched.sort((a, b) => {
+      if (a.type === b.type) {
+        return (a.subject_code || '').localeCompare(b.subject_code || '')
+      }
+      return a.type === 'Theory' ? -1 : 1
+    })
+
     setSubjects(enriched)
     setLoading(false)
   }, [])
@@ -432,7 +439,7 @@ export default function SubjectsPage() {
                         className="text-sm font-extrabold"
                         style={{ color: subject.stats.total === 0 ? '#94a3b8' : subject.stats.percentage >= targetAttendance ? '#16a34a' : '#ef4444' }}
                       >
-                        {subject.stats.total === 0 ? '–' : `${Math.round(subject.stats.percentage)}%`}
+                        {Math.round(subject.stats.percentage)}%
                       </span>
                       <motion.div
                         animate={{ rotate: isExpanded ? 90 : 0 }}
@@ -528,7 +535,7 @@ export default function SubjectsPage() {
                       {abbr}
                     </div>
                     <span className="text-base font-extrabold" style={{ color: pctColor }}>
-                      {noData ? '–' : `${Math.round(percentage)}%`}
+                      {Math.round(percentage)}%
                     </span>
                   </div>
 

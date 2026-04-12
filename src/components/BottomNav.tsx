@@ -54,7 +54,7 @@ export default function BottomNav() {
   return (
     <nav className="fixed bottom-4 z-50 w-[calc(100%-2rem)] max-w-md mx-auto left-0 right-0">
       <div
-        className="flex justify-between items-center w-full px-6 py-4 rounded-[2.5rem] bg-white/95 backdrop-blur-md border border-slate-200/60"
+        className="flex justify-between items-center w-full px-6 py-2.5 rounded-3xl bg-white/95 backdrop-blur-md border border-slate-200/60"
         style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}
       >
         {navItems.map((item) => {
@@ -63,7 +63,7 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-full transition-all duration-200 ${
+              className={`flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 ${
                 isActive
                   ? 'bg-teal-500 text-white'
                   : 'text-slate-400 hover:text-teal-500'

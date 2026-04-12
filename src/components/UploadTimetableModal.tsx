@@ -39,6 +39,17 @@ export default function UploadTimetableModal({ onClose }: Props) {
   const isLoading = isParsing || isImporting
   const isReviewMode = extractedData !== null
 
+  const loadingPhrases = ["Scanning grid lines...", "Identifying subject codes...", "Organizing your week..."]
+  const [parsingTextIdx, setParsingTextIdx] = useState(0)
+
+  useEffect(() => {
+    if (!isParsing) return
+    const interval = setInterval(() => {
+      setParsingTextIdx((prev) => (prev + 1) % loadingPhrases.length)
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [isParsing, loadingPhrases.length])
+
   // ── Effects ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -225,7 +236,27 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 transition={{ duration: 0.15 }}
                 className="px-5 pb-5 pt-4 flex flex-col gap-4"
               >
-                {/* Drop zone */}
+                {isParsing ? (
+                  <div className="flex flex-col items-center justify-center py-12 min-h-[320px]">
+                    <svg className="animate-spin h-10 w-10 text-teal-500 mb-8" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <AnimatePresence mode="wait">
+                      <motion.p
+                        key={parsingTextIdx}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        className="text-base font-semibold text-slate-600 animate-pulse"
+                      >
+                        {loadingPhrases[parsingTextIdx]}
+                      </motion.p>
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <>
+                    {/* Drop zone */}
                 <div
                   onClick={() => !isLoading && fileInputRef.current?.click()}
                   onDrop={handleDrop}
@@ -294,20 +325,14 @@ export default function UploadTimetableModal({ onClose }: Props) {
                     className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
                     Cancel
                   </button>
-                  <button onClick={handleParse} disabled={!file || isLoading}
-                    className="py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                    style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}>
-                    {isParsing ? (
-                      <span className="inline-flex items-center justify-center gap-2">
-                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                        Analyzing…
-                      </span>
-                    ) : '✨ Extract Schedule'}
-                  </button>
-                </div>
+                    <button onClick={handleParse} disabled={!file || isLoading}
+                      className="py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+                      style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}>
+                      Extract Schedule
+                    </button>
+                  </div>
+                  </>
+                )}
               </motion.div>
             ) : (
               /* ── Review View ─────────────────────────────────────────── */
@@ -475,7 +500,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                         </svg>
                         Importing…
                       </span>
-                    ) : `✅ Confirm & Import ${extractedData!.length} Class${extractedData!.length !== 1 ? 'es' : ''}`}
+                    ) : `Confirm & Import ${extractedData!.length} Class${extractedData!.length !== 1 ? 'es' : ''}`}
                   </button>
                   <p className="text-center text-[11px] text-slate-400">
                     Collisions are skipped automatically · You can still edit your schedule afterwards
