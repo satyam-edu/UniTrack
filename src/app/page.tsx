@@ -337,7 +337,7 @@ export default function HomePage() {
                 </svg>
                 <div className="flex flex-col items-center justify-center text-white">
                   <span className="text-3xl font-extrabold leading-none">
-                    {globalTotal > 0 ? Math.round(attendancePercentage) : '--'}
+                    {Math.round(attendancePercentage)}
                   </span>
                   <span className="text-[10px] font-semibold tracking-widest opacity-80 mt-0.5">
                     PERCENT

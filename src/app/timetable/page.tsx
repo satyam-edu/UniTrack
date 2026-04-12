@@ -50,30 +50,13 @@ function formatTime(timeStr: string) {
 
 // ─── Dummy Data Initialization ────────────────────────────────────────────────
 
-const DUMMY_SCHEDULE: Record<string, TimetableSlot[]> = {
-  Monday: [
-    {
-      id: 'dummy-1', subject_id: 'sub-1', day_of_week: 'Monday',
-      start_time: '09:00:00', end_time: '10:00:00', room_location: 'Room 402, Block A',
-      subject: { subject_name: 'Data Structures and Algorithms', subject_code: 'CS201', type: 'Theory' }
-    },
-    {
-      id: 'dummy-2', subject_id: 'sub-2', day_of_week: 'Monday',
-      start_time: '10:00:00', end_time: '11:00:00', room_location: 'Room 405, Block A',
-      subject: { subject_name: 'Database Management Systems', subject_code: 'CS202', type: 'Theory' }
-    },
-    {
-      id: 'dummy-3', subject_id: 'sub-3', day_of_week: 'Monday',
-      start_time: '11:00:00', end_time: '13:00:00', room_location: 'Lab 2, Block C',
-      subject: { subject_name: 'Computer Networks', subject_code: 'CS203', type: 'Lab' }
-    }
-  ]
-}
+// No dummy data in production
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function TimetablePage() {
-  const [schedule, setSchedule] = useState<Record<string, TimetableSlot[]>>(DUMMY_SCHEDULE)
+  const [schedule, setSchedule] = useState<Record<string, TimetableSlot[]>>({})
+  const [isLoading, setIsLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string>('Monday')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -96,7 +79,10 @@ export default function TimetablePage() {
       .eq('user_id', session.user.id)
       .order('start_time', { ascending: true })
 
-    if (error || !data) return
+    if (error || !data) {
+      setIsLoading(false)
+      return
+    }
 
     const grouped: Record<string, TimetableSlot[]> = {}
     data.forEach((slot: any) => {
@@ -105,6 +91,7 @@ export default function TimetablePage() {
     })
 
     setSchedule(grouped)
+    setIsLoading(false)
   }, [])
 
   useEffect(() => { loadTimetable() }, [loadTimetable])
@@ -299,7 +286,24 @@ export default function TimetablePage() {
 
         {/* ── Timeline + Cards ──────────────────────────────────────────────── */}
         <AnimatePresence mode="wait">
-          {slotsForDay.length === 0 ? (
+          {isLoading ? (
+            <motion.div
+              key="loading-skeleton"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-4"
+            >
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex gap-4 items-start animate-pulse">
+                  <div className="flex-shrink-0 mt-3.5 z-10">
+                    <div className="w-[18px] h-[18px] rounded-full border-2 border-white bg-slate-200" />
+                  </div>
+                  <div className="flex-1 h-[90px] rounded-3xl bg-white border border-slate-200/60" />
+                </div>
+              ))}
+            </motion.div>
+          ) : slotsForDay.length === 0 ? (
             <motion.div
               key={`empty-${selectedDay}`}
               initial={{ opacity: 0, y: 10 }}

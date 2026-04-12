@@ -92,7 +92,7 @@ export default function SubjectStatsDetail({
               className="text-4xl font-bold leading-none"
               style={{ color: ringColor }}
             >
-              {noData ? '–' : `${Math.round(safe)}`}
+              {Math.round(safe)}
             </span>
             <span className="text-[10px] font-medium text-slate-400 mt-1 tracking-widest uppercase">
               {noData ? 'no data' : 'percent'}
