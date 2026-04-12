@@ -92,6 +92,7 @@ export async function parseTimetableImage(formData: FormData): Promise<ParseResu
 
   // ── Call Gemini ───────────────────────────────────────────────────────────
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+
   const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview', generationConfig: { responseMimeType: "application/json" } })
 
   const prompt = `You are an expert data extraction assistant. Analyze the provided college timetable image and extract the schedule into a strict JSON array.
