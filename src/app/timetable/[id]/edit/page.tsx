@@ -26,6 +26,8 @@ export default function EditTimetablePage() {
     day_of_week: 'Monday',
     start_time: '09:00',
     end_time: '10:00',
+    room_location: '',
+    group_designation: '',
   })
 
   const loadData = useCallback(async () => {
@@ -72,6 +74,10 @@ export default function EditTimetablePage() {
       day_of_week: slot.day_of_week,
       start_time: formattedStartTime,
       end_time: formattedEndTime,
+      room_location: slot.room_location ?? '',
+      group_designation: slot.group_designation && slot.group_designation.toUpperCase() !== 'ALL'
+        ? slot.group_designation
+        : '',
     })
 
     setFetching(false)
@@ -110,10 +116,12 @@ export default function EditTimetablePage() {
       const { error: updateError } = await supabase
         .from('timetable')
         .update({
-          subject_id: form.subject_id,
-          day_of_week: form.day_of_week,
-          start_time: `${form.start_time}:00`,
-          end_time: `${form.end_time}:00`,
+          subject_id:        form.subject_id,
+          day_of_week:       form.day_of_week,
+          start_time:        `${form.start_time}:00`,
+          end_time:          `${form.end_time}:00`,
+          room_location:     form.room_location.trim() || null,
+          group_designation: form.group_designation.trim().toUpperCase() || 'ALL',
         })
         .eq('id', id)
         .eq('user_id', session.user.id)
@@ -230,6 +238,37 @@ export default function EditTimetablePage() {
               value={form.end_time}
               onChange={handleChange}
               className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="room_location" className="block text-sm font-medium text-text-secondary mb-1.5">
+              Room / Location
+            </label>
+            <input
+              id="room_location"
+              name="room_location"
+              type="text"
+              placeholder="e.g. Lab 218"
+              value={form.room_location}
+              onChange={handleChange}
+              className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+            />
+          </div>
+          <div>
+            <label htmlFor="group_designation" className="block text-sm font-medium text-text-secondary mb-1.5">
+              Group
+            </label>
+            <input
+              id="group_designation"
+              name="group_designation"
+              type="text"
+              placeholder="e.g. G1, A, B"
+              value={form.group_designation}
+              onChange={handleChange}
+              className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
             />
           </div>
         </div>

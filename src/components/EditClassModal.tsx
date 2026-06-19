@@ -1,14 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'motion/react'
 import { supabase } from '@/lib/supabase'
-
-interface Subject {
-  id: string
-  subject_name: string
-  subject_code: string
-}
 
 const timeToMins = (time: string) => {
   const [h, m] = time.split(':').map(Number)
@@ -24,6 +18,7 @@ interface TimetableSlot {
   start_time: string
   end_time: string
   room_location?: string | null
+  group_designation?: string | null
   subject: {
     subject_name: string
     subject_code: string
@@ -43,7 +38,6 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Truncate from "HH:MM:SS" back to "HH:MM" for HTML time inputs
   const formatForInput = (timeStr: string) => {
     if (!timeStr) return ''
     return timeStr.slice(0, 5)
@@ -54,15 +48,16 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
     start_time: formatForInput(slot.start_time),
     end_time: formatForInput(slot.end_time),
     room_location: slot.room_location || '',
+    group_designation: (slot.group_designation && slot.group_designation.toUpperCase() !== 'ALL')
+      ? slot.group_designation
+      : '',
   })
 
-  // Lock body scroll while modal is open
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = '' }
   }, [])
 
-  // Close on Escape key
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -92,28 +87,31 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
 
       const newStart = `${form.start_time}:00`
       const newEnd = `${form.end_time}:00`
+      const newGroup = form.group_designation.trim().toUpperCase() || 'ALL'
 
-      // Overlap check
+      // Fetch existing slots for this day (with group_designation for smart overlap check)
       const { data: existingSlots, error: fetchError } = await supabase
         .from('timetable')
-        .select('id, start_time, end_time')
+        .select('id, start_time, end_time, group_designation')
         .eq('user_id', session.user.id)
         .eq('day_of_week', form.day_of_week)
 
       if (fetchError) throw fetchError
 
+      // Group-aware overlap: two different specific groups never conflict each other
       const hasOverlap = existingSlots?.some((s) => {
-        if (s.id === slot.id) return false // allow self overlap
+        if (s.id === slot.id) return false
+        const existingGroup = (s.group_designation ?? 'ALL').toUpperCase()
+        if (newGroup !== 'ALL' && existingGroup !== 'ALL' && newGroup !== existingGroup) return false
         return newStart < s.end_time && newEnd > s.start_time
       })
 
       if (hasOverlap) {
-        setError('You already have a class scheduled during this time slot.')
+        setError('Time conflicts with another class in the same group.')
         setLoading(false)
         return
       }
 
-      // Update Timetable record
       const { error: updateError } = await supabase
         .from('timetable')
         .update({
@@ -121,6 +119,7 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
           start_time: newStart,
           end_time: newEnd,
           room_location: form.room_location ? form.room_location : null,
+          group_designation: newGroup,
         })
         .eq('id', slot.id)
 
@@ -162,17 +161,15 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
             </button>
           </div>
 
-          {/* Content */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Error */}
             {error && (
-              <div className="mb-4 rounded-xl px-4 py-3 text-sm text-red-600 bg-red-50 border border-red-200">
+              <div className="rounded-xl px-4 py-3 text-sm text-red-600 bg-red-50 border border-red-200">
                 {error}
               </div>
             )}
 
-            {/* Read-only Subject Info */}
-            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-2">
+            {/* Read-only subject info */}
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
               <p className="font-bold text-slate-800 text-base">{slot.subject.subject_name}</p>
               <div className="flex gap-2 mt-2">
@@ -185,59 +182,64 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
               </div>
             </div>
 
-              {/* Day */}
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">
-                  Day <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="day_of_week" required value={form.day_of_week} onChange={handleChange}
-                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
-                >
-                  {daysOfWeek.map((day) => (
-                    <option key={day} value={day}>{day}</option>
-                  ))}
-                </select>
-              </div>
+            {/* Day */}
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1.5">
+                Day <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="day_of_week" required value={form.day_of_week} onChange={handleChange}
+                className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none cursor-pointer transition-all"
+              >
+                {daysOfWeek.map((day) => (
+                  <option key={day} value={day}>{day}</option>
+                ))}
+              </select>
+            </div>
 
-              {/* Time row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1.5">Start <span className="text-red-500">*</span></label>
-                  <input name="start_time" type="time" required value={form.start_time} onChange={handleChange}
-                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1.5">End <span className="text-red-500">*</span></label>
-                  <input name="end_time" type="time" required value={form.end_time} onChange={handleChange}
-                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all" />
-                </div>
-              </div>
-
-              {/* Room */}
+            {/* Time row */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5 flex justify-between">
-                  <span>Room / Location</span>
-                  <span className="text-slate-400 text-xs">Optional</span>
-                </label>
-                <input name="room_location" type="text" placeholder="e.g. Room 402, Block A" value={form.room_location} onChange={handleChange}
+                <label className="block text-sm font-medium text-slate-600 mb-1.5">Start <span className="text-red-500">*</span></label>
+                <input name="start_time" type="time" required value={form.start_time} onChange={handleChange}
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1.5">End <span className="text-red-500">*</span></label>
+                <input name="end_time" type="time" required value={form.end_time} onChange={handleChange}
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 active:bg-white transition-all" />
+              </div>
+            </div>
+
+            {/* Room + Group row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1.5">Room / Location</label>
+                <input name="room_location" type="text" placeholder="e.g. Room 402" value={form.room_location} onChange={handleChange}
                   className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all" />
               </div>
-
-              {/* Actions */}
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <button type="button" onClick={onClose}
-                  className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button type="submit" disabled={loading}
-                  className="py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                  style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}
-                >
-                  {loading ? 'Saving…' : 'Save Changes'}
-                </button>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1.5">Group</label>
+                <input name="group_designation" type="text" placeholder="e.g. G1, A, B" value={form.group_designation} onChange={handleChange}
+                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all" />
               </div>
+            </div>
+            <p className="text-xs text-slate-400 -mt-2">Leave Group blank to show this class to everyone.</p>
+
+            {/* Actions */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button type="button" onClick={onClose}
+                className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={loading}
+                className="py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}
+              >
+                {loading ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
           </form>
         </div>
       </motion.div>

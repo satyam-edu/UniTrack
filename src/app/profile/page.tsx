@@ -503,6 +503,11 @@ const Icon = {
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
     </svg>
   ),
+  Users: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  ),
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -528,6 +533,12 @@ export default function ProfilePage() {
     lab_mode: 'class',
   })
 
+  // Batch / Group (source of truth — persisted to localStorage)
+  const [primaryGroup, setPrimaryGroup] = useState<string>('ALL')
+  const [availableGroups, setAvailableGroups] = useState<string[]>([])
+  const [editingGroup, setEditingGroup] = useState(false)
+  const [groupDraft, setGroupDraft] = useState<string>('ALL')
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -548,6 +559,29 @@ export default function ProfilePage() {
       setLoading(false)
     }
     loadProfile()
+  }, [])
+
+  // ── Load Batch/Group preference + available groups from the timetable ───────
+  useEffect(() => {
+    const saved = localStorage.getItem('unitrack_primary_group') || 'ALL'
+    setPrimaryGroup(saved)
+    setGroupDraft(saved)
+
+    async function loadGroups() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const { data } = await supabase
+        .from('timetable')
+        .select('group_designation')
+        .eq('user_id', session.user.id)
+      const set = new Set<string>()
+      ;(data ?? []).forEach((row: { group_designation: string | null }) => {
+        const g = row.group_designation?.trim().toUpperCase()
+        if (g && g !== 'ALL') set.add(g)
+      })
+      setAvailableGroups(Array.from(set).sort())
+    }
+    loadGroups()
   }, [])
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -598,6 +632,14 @@ export default function ProfilePage() {
 
   function handleProfileSaved(updated: Partial<UserProfile>) {
     setUser((prev) => prev ? { ...prev, ...updated } : prev)
+  }
+
+  function handleSaveGroup() {
+    setPrimaryGroup(groupDraft)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('unitrack_primary_group', groupDraft)
+    }
+    setEditingGroup(false)
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────
@@ -784,7 +826,80 @@ export default function ProfilePage() {
           )}
         </motion.div>
 
-        {/* ── 3. Personal Details Card ───────────────────────────────────── */}
+        {/* ── 3. Batch / Group Card ──────────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12, type: 'spring' as const, damping: 25 }}
+          className={`rounded-3xl overflow-hidden mb-4 ${GLASS_CARD_CLASS}`}
+          style={glassCard}
+        >
+          {/* Section header */}
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(26,158,160,0.10)' }}>
+            <h3 className="text-xs font-bold tracking-widest text-text-muted uppercase">Batch / Group</h3>
+            {!editingGroup && (
+              <button
+                onClick={() => { setGroupDraft(primaryGroup); setEditingGroup(true) }}
+                className="text-xs font-bold px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 active:scale-95"
+                style={{ background: 'rgba(26,158,160,0.10)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
+              >
+                Edit
+              </button>
+            )}
+          </div>
+
+          {editingGroup ? (
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Pick your primary batch. This locks your Home schedule to the right classes. The Timetable explorer can still preview other groups.
+              </p>
+
+              {/* Group choices */}
+              <div className="grid grid-cols-4 gap-2">
+                {availableGroups.map((group) => {
+                  const active = groupDraft.toUpperCase() === group.toUpperCase()
+                  return (
+                    <button
+                      key={group}
+                      type="button"
+                      onClick={() => setGroupDraft(group)}
+                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all duration-200 active:scale-95"
+                      style={active
+                        ? { background: 'rgba(26,158,160,0.15)', border: '1.5px solid #1a9ea0', color: '#1a9ea0' }
+                        : { background: 'transparent', borderColor: 'rgba(26,158,160,0.20)', color: '#7a93a8' }
+                      }
+                    >
+                      {group}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button type="button" onClick={() => setEditingGroup(false)}
+                  className="py-3 rounded-xl text-sm font-semibold cursor-pointer"
+                  style={{ background: 'rgba(26,158,160,0.06)', border: '1px solid rgba(26,158,160,0.15)', color: '#7a93a8' }}
+                >
+                  Cancel
+                </button>
+                <button type="button" onClick={handleSaveGroup}
+                  className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer transition-all duration-200 active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, #1a9ea0, #0d7c80)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <InfoRow
+              icon={<Icon.Users />}
+              label="Primary Group"
+              value={primaryGroup.toUpperCase() === 'ALL' ? 'All Groups' : `Group ${primaryGroup}`}
+            />
+          )}
+        </motion.div>
+
+        {/* ── 4. Personal Details Card ───────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}

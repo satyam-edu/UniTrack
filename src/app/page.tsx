@@ -6,14 +6,17 @@ import { supabase } from '@/lib/supabase'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import BottomNav from '@/components/BottomNav'
 import ProgressRing from '@/components/ProgressRing'
+import GroupOnboardingModal from '@/components/GroupOnboardingModal'
 import {
   format,
   startOfWeek,
+  startOfDay,
   addDays,
   subWeeks,
   addWeeks,
   isSameDay,
   isToday,
+  isFuture,
 } from 'date-fns'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -32,6 +35,7 @@ interface TimetableSlot {
   day_of_week: string
   start_time: string
   end_time: string
+  group_designation?: string | null
   subject: {
     subject_name: string
     subject_code: string
@@ -106,7 +110,10 @@ export default function HomePage() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [primaryGroup, setPrimaryGroup] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
+
+  const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()))
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(
     startOfWeek(new Date(), { weekStartsOn: 1 })
   )
@@ -138,7 +145,7 @@ export default function HomePage() {
 
     const { data: timetableData } = await supabase
       .from('timetable')
-      .select('id, subject_id, day_of_week, start_time, end_time, subject:subjects(subject_name, subject_code, type)')
+      .select('id, subject_id, day_of_week, start_time, end_time, group_designation, subject:subjects(subject_name, subject_code, type)')
       .eq('user_id', userId)
 
     if (timetableData) setAllTimetable(timetableData as unknown as TimetableSlot[])
@@ -154,6 +161,13 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => { loadInitialData() }, [loadInitialData])
+
+  // Hydration-safe: Home is locked to the primary group chosen in Profile
+  useEffect(() => {
+    setIsMounted(true)
+    const saved = localStorage.getItem('unitrack_primary_group')
+    if (saved) setPrimaryGroup(saved)
+  }, [])
 
   // 2. Global stats
   useEffect(() => {
@@ -182,6 +196,13 @@ export default function HomePage() {
     const dateStr = format(selectedDate, 'yyyy-MM-dd')
     const slotsForDay = allTimetable
       .filter((s) => s.day_of_week === dayName)
+      .filter((s) => {
+        // Home is locked to the primary group; 'ALL' shows every parallel slot
+        if ((primaryGroup ?? '').toUpperCase() === 'ALL') return true
+        // Always show shared slots; otherwise strict match for the primary group
+        if (!s.group_designation || s.group_designation.toUpperCase() === 'ALL') return true
+        return s.group_designation.toUpperCase() === (primaryGroup ?? '').toUpperCase()
+      })
       .sort((a, b) => a.start_time.localeCompare(b.start_time))
     const merged: SlotWithAttendance[] = slotsForDay.map((slot) => {
       const record = allAttendance.find((a) => a.timetable_id === slot.id && a.date === dateStr)
@@ -189,7 +210,7 @@ export default function HomePage() {
       return { ...slot, attendanceRecord: record, pointValue: mode === 'hour' ? getHoursDiff(slot.start_time, slot.end_time) : 1 }
     })
     setSlotsToday(merged)
-  }, [selectedDate, allTimetable, allAttendance, user])
+  }, [selectedDate, allTimetable, allAttendance, user, primaryGroup])
 
   // 4. Optimistic attendance marking
   async function handleMarkAttendance(slot: SlotWithAttendance, status: 'Present' | 'Absent' | 'Cancelled') {
@@ -248,9 +269,28 @@ export default function HomePage() {
     [currentWeekStart]
   )
 
+  // ── Primary group persistence (set via onboarding; source of truth is Profile) ──
+  function handleSelectPrimary(group: string) {
+    setPrimaryGroup(group)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('unitrack_primary_group', group)
+    }
+  }
+
+  // Unique batch/groups detected in the schedule (excludes 'ALL') — for onboarding
+  const batchGroups = useMemo(() => {
+    const set = new Set<string>()
+    allTimetable.forEach((slot) => {
+      const g = slot.group_designation?.trim().toUpperCase()
+      if (g && g !== 'ALL') set.add(g)
+    })
+    return Array.from(set).sort()
+  }, [allTimetable])
+
+
   // ─── Loading skeleton ──────────────────────────────────────────────────────
 
-  if (loading) {
+  if (loading || !isMounted) {
     return (
       <ProtectedRoute>
         <main className="flex-1 flex items-center justify-center">
@@ -269,6 +309,16 @@ export default function HomePage() {
   const attendancePercentage = globalTotal > 0 ? (globalAttended / globalTotal) * 100 : 0
   const target = user?.target_attendance || 75
   const isHealthy = attendancePercentage >= target
+
+  // Mandatory first-time selection when no primary group is set yet
+  if (primaryGroup === null && batchGroups.length > 0) {
+    return (
+      <ProtectedRoute>
+        <GroupOnboardingModal groups={batchGroups} onSelect={handleSelectPrimary} />
+        <BottomNav />
+      </ProtectedRoute>
+    )
+  }
 
   return (
     <ProtectedRoute>
@@ -406,7 +456,7 @@ export default function HomePage() {
               <motion.button
                 whileTap={{ scale: 0.93 }}
                 onClick={() => {
-                  setSelectedDate(new Date())
+                  setSelectedDate(startOfDay(new Date()))
                   setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))
                 }}
                 className="px-3 py-1 rounded-xl text-sm font-medium cursor-pointer transition-colors"
@@ -436,16 +486,14 @@ export default function HomePage() {
               const hasAttendance = allAttendance.some(
                 (a) => a.date === format(day, 'yyyy-MM-dd') && a.status !== 'Cancelled'
               )
-              const today = new Date()
-              today.setHours(0, 0, 0, 0)
-              const isFuture = day > today
+              const isFutureDay = isFuture(day)
 
               return (
                 <motion.button
                   key={day.toISOString()}
                   whileTap={{ scale: 0.88 }}
                   onClick={() => setSelectedDate(day)}
-                  className={`flex flex-col items-center py-2.5 rounded-full transition-all cursor-pointer ${isFuture && !selected ? 'opacity-50' : ''}`}
+                  className={`flex flex-col items-center py-2.5 rounded-full transition-all cursor-pointer ${isFutureDay && !selected ? 'opacity-50' : ''}`}
                   style={
                     selected
                       ? { background: '#14b8a6', color: 'white', boxShadow: '0 4px 14px rgba(20,184,166,0.30)' }
@@ -482,6 +530,24 @@ export default function HomePage() {
               {format(selectedDate, 'EEEE')}&apos;s Classes
             </h2>
             <div className="flex items-center gap-2">
+              {primaryGroup && (
+                <span
+                  className="text-xs font-bold pl-2 pr-2.5 py-1 rounded-full text-white flex items-center gap-1"
+                  style={{
+                    background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+                    boxShadow: '0 2px 8px rgba(26,158,160,0.30)',
+                  }}
+                >
+                  <svg
+                    width="11" height="11" viewBox="0 0 24 24" fill="none"
+                    stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  {primaryGroup.toUpperCase() === 'ALL' ? 'All Groups' : `Group ${primaryGroup}`}
+                </span>
+              )}
               <span
                 className="text-xs font-semibold px-2.5 py-1 rounded-full"
                 style={{
@@ -546,9 +612,7 @@ export default function HomePage() {
                 <div className="space-y-3 pb-0.5">
                   {slotsToday.map((slot, i) => {
                     const status = slot.attendanceRecord?.status
-                    const today = new Date()
-                    today.setHours(0, 0, 0, 0)
-                    const isFutureDate = selectedDate > today
+                    const isFutureDate = isFuture(selectedDate)
 
                     /* ── Card tints per-status ── */
                     const cardBorder =
@@ -603,6 +667,21 @@ export default function HomePage() {
                                 {slot.subject.subject_code}
                               </span>
                               <span className="text-xs text-text-muted font-medium">{slot.subject.type}</span>
+                              {/* Group badge — only when primary group is ALL, so stacked parallels stay readable */}
+                              {(primaryGroup ?? '').toUpperCase() === 'ALL' && (
+                                <span
+                                  className="text-xs font-semibold px-2 py-0.5 rounded-md"
+                                  style={
+                                    !slot.group_designation || slot.group_designation.toUpperCase() === 'ALL'
+                                      ? { background: 'rgba(100,116,139,0.10)', color: '#475569', border: '1px solid rgba(100,116,139,0.20)' }
+                                      : { background: 'rgba(26,158,160,0.12)', color: '#0d7c80', border: '1px solid rgba(26,158,160,0.20)' }
+                                  }
+                                >
+                                  {!slot.group_designation || slot.group_designation.toUpperCase() === 'ALL'
+                                    ? 'Universal'
+                                    : `Group ${slot.group_designation.toUpperCase()}`}
+                                </span>
+                              )}
                             </div>
                           </div>
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
@@ -9,6 +9,7 @@ import AddClassModal from '@/components/AddClassModal'
 import EditClassModal from '@/components/EditClassModal'
 import ScheduleClassModal from '@/components/ScheduleClassModal'
 import UploadTimetableModal from '@/components/UploadTimetableModal'
+import GroupOnboardingModal from '@/components/GroupOnboardingModal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,8 @@ interface TimetableSlot {
   start_time: string
   end_time: string
   room_location?: string | null
+  group_designation?: string | null
+  is_elective?: boolean
   subject: {
     subject_name: string
     subject_code: string
@@ -30,12 +33,12 @@ interface TimetableSlot {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAYS = [
-  { full: 'Monday',    short: 'Mon' },
-  { full: 'Tuesday',   short: 'Tue' },
+  { full: 'Monday', short: 'Mon' },
+  { full: 'Tuesday', short: 'Tue' },
   { full: 'Wednesday', short: 'Wed' },
-  { full: 'Thursday',  short: 'Thu' },
-  { full: 'Friday',    short: 'Fri' },
-  { full: 'Saturday',  short: 'Sat' },
+  { full: 'Thursday', short: 'Thu' },
+  { full: 'Friday', short: 'Fri' },
+  { full: 'Saturday', short: 'Sat' },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,12 +62,16 @@ export default function TimetablePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string>('Monday')
+  const [viewingGroup, setViewingGroup] = useState<string>('ALL')
+  const [primaryGroup, setPrimaryGroup] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [classToEdit, setClassToEdit] = useState<TimetableSlot | null>(null)
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [isHelpOpen, setIsHelpOpen] = useState(false)
   const actionMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Data loading ─────────────────────────────────────────────────────────────
@@ -75,7 +82,7 @@ export default function TimetablePage() {
 
     const { data, error } = await supabase
       .from('timetable')
-      .select('id, subject_id, day_of_week, start_time, end_time, room_location, subject:subjects(subject_name, subject_code, type, faculty_name)')
+      .select('id, subject_id, day_of_week, start_time, end_time, room_location, group_designation, is_elective, subject:subjects(subject_name, subject_code, type, faculty_name)')
       .eq('user_id', session.user.id)
       .order('start_time', { ascending: true })
 
@@ -95,6 +102,17 @@ export default function TimetablePage() {
   }, [])
 
   useEffect(() => { loadTimetable() }, [loadTimetable])
+
+  // ── Hydration-safe group load ────────────────────────────────────────────────
+  // primaryGroup is loaded from localStorage so the GroupOnboardingModal doesn't
+  // re-appear, but viewingGroup stays 'ALL' — the timetable page always opens
+  // showing every class so the user can see the full picture.
+  useEffect(() => {
+    setIsMounted(true)
+    const primary = localStorage.getItem('unitrack_primary_group')
+    setPrimaryGroup(primary)
+    // intentionally NOT setting viewingGroup here — 'ALL' is the correct default
+  }, [])
 
   // ── Action menu handlers ──────────────────────────────────────────────────────
 
@@ -130,14 +148,64 @@ export default function TimetablePage() {
   // ── Loading state rendered inline — no full-page gate
   const slotsForDay = schedule[selectedDay] ?? []
 
+  // ── Primary group persistence — only the onboarding modal mutates this ──────
+  function handleSelectPrimary(group: string) {
+    setPrimaryGroup(group)
+    setViewingGroup(group)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('unitrack_primary_group', group)
+    }
+  }
+
+  // ── Derive the list of available batch/groups from the loaded schedule ──────
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>()
+    Object.values(schedule)
+      .flat()
+      .forEach((slot) => {
+        const g = slot.group_designation?.trim().toUpperCase()
+        if (g && g !== 'ALL') set.add(g)
+      })
+    return ['ALL', ...Array.from(set).sort()]
+  }, [schedule])
+
+  // Batch groups only (excludes 'ALL') — used for the onboarding modal
+  const batchGroups = availableGroups.filter((g) => g !== 'ALL')
+
+  // ── Filter uses the transient viewingGroup (does NOT touch the primary group) ──
+  const filteredSlots = slotsForDay.filter((slot) => {
+    // If 'ALL' is being viewed, bypass filtering and display every parallel slot together
+    if (viewingGroup.toUpperCase() === 'ALL') return true
+    // Always show slots meant for everyone
+    if (!slot.group_designation || slot.group_designation.toUpperCase() === 'ALL') return true
+    // Strict match for the group currently being explored
+    return slot.group_designation.toUpperCase() === viewingGroup.toUpperCase()
+  })
+
   // ── Render ───────────────────────────────────────────────────────────────────
+
+  // Pulse the help icon whenever the timetable is empty — guides new users to read it first
+  const isNewUser = !isLoading && Object.keys(schedule).length === 0
+
+  // Avoid hydration mismatch: don't render group-dependent UI until mounted
+  if (!isMounted) return null
+
+  // Mandatory first-time selection when no primary group is set yet
+  if (primaryGroup === null && batchGroups.length > 0) {
+    return (
+      <ProtectedRoute>
+        <GroupOnboardingModal groups={batchGroups} onSelect={handleSelectPrimary} schedule={schedule} />
+        <BottomNav />
+      </ProtectedRoute>
+    )
+  }
 
   return (
     <ProtectedRoute>
       <motion.main
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number,number,number,number] }}
+        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] }}
         className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
         style={{ willChange: 'opacity, transform' }}
       >
@@ -146,105 +214,126 @@ export default function TimetablePage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Timetable</h1>
 
-          {/* ── Add button + dropdown ─────────────────────────────────────────── */}
-          <div ref={actionMenuRef} className="relative">
-            <motion.button
-              id="timetable-add-btn"
-              onClick={() => setIsActionMenuOpen((o) => !o)}
-              whileTap={{ scale: 0.93 }}
-              className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer shadow-lg"
-              style={{
-                background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
-                boxShadow: '0 4px 14px rgba(26,158,160,0.40)',
-              }}
-            >
-              <motion.svg
-                width="16" height="16" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" strokeWidth="2.8"
-                strokeLinecap="round" strokeLinejoin="round"
-                animate={{ rotate: isActionMenuOpen ? 45 : 0 }}
-                transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </motion.svg>
-              Add
-            </motion.button>
-
-            {/* ── Action dropdown ───────────────────────────────────────────── */}
-            <AnimatePresence>
-              {isActionMenuOpen && (
-                <>
-                  {/* Invisible backdrop to close on outside click */}
-                  <div
-                    className="fixed inset-0 z-30"
-                    onClick={() => setIsActionMenuOpen(false)}
-                  />
-
-                  <motion.div
-                    id="timetable-action-menu"
-                    initial={{ opacity: 0, scale: 0.92, y: -6 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.92, y: -6 }}
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                    className="absolute right-0 top-full mt-2 z-40 w-56 rounded-2xl overflow-hidden"
-                    style={{
-                      background: 'rgba(255,255,255,0.88)',
-                      backdropFilter: 'blur(24px)',
-                      WebkitBackdropFilter: 'blur(24px)',
-                      border: '1px solid rgba(255,255,255,0.70)',
-                      boxShadow: '0 12px 36px rgba(0,0,0,0.12), 0 2px 8px rgba(26,158,160,0.10)',
-                    }}
-                  >
-                    {/* Upload Timetable */}
-                    <button
-                      id="action-upload-timetable"
-                      onClick={handleUploadTimetable}
-                      className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-teal-50/80 transition-colors cursor-pointer border-b border-slate-100/80"
-                    >
-                      <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                        style={{ background: 'rgba(26,158,160,0.12)' }}
-                      >
-                        {/* Sparkles / magic icon */}
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/>
-                          <path d="M5 18l1 2 2-1-1-2-2 1z"/>
-                          <path d="M19 15l1 2 2-1-1-2-2 1z"/>
-                        </svg>
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-slate-700 leading-snug">Upload Timetable</p>
-                        <p className="text-xs text-slate-400 mt-0.5">Auto-extract from image</p>
-                      </div>
-                    </button>
-
-                    {/* Add Manually */}
-                    <button
-                      id="action-add-manually"
-                      onClick={handleAddManually}
-                      className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-teal-50/80 transition-colors cursor-pointer"
-                    >
-                      <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                        style={{ background: 'rgba(100,116,139,0.10)' }}
-                      >
-                        {/* Pen icon */}
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 20h9"/>
-                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                        </svg>
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-slate-700 leading-snug">Add Manually</p>
-                        <p className="text-xs text-slate-400 mt-0.5">Enter details yourself</p>
-                      </div>
-                    </button>
-                  </motion.div>
-                </>
+          <div className="flex items-center gap-2">
+            {/* ── Help button ───────────────────────────────────────────────── */}
+            <div className="relative">
+              {isNewUser && (
+                <span className="absolute inset-0 rounded-full animate-ping opacity-60" style={{ background: 'rgba(26,158,160,0.35)' }} />
               )}
-            </AnimatePresence>
-          </div>
+              <button
+                onClick={() => setIsHelpOpen(true)}
+                className="relative w-9 h-9 flex items-center justify-center rounded-full text-sm font-bold transition-colors cursor-pointer"
+                style={{
+                  background: isNewUser ? 'rgba(26,158,160,0.18)' : 'rgba(100,116,139,0.10)',
+                  color: isNewUser ? '#0d7c80' : '#64748b',
+                  border: isNewUser ? '1.5px solid rgba(26,158,160,0.40)' : '1.5px solid transparent',
+                }}
+                aria-label="Help"
+              >
+                ?
+              </button>
+            </div>
+
+            {/* ── Add button + dropdown ─────────────────────────────────────────── */}
+            <div ref={actionMenuRef} className="relative">
+              <motion.button
+                id="timetable-add-btn"
+                onClick={() => setIsActionMenuOpen((o) => !o)}
+                whileTap={{ scale: 0.93 }}
+                className="flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2.5 rounded-2xl cursor-pointer shadow-lg"
+                style={{
+                  background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+                  boxShadow: '0 4px 14px rgba(26,158,160,0.40)',
+                }}
+              >
+                <motion.svg
+                  width="16" height="16" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2.8"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  animate={{ rotate: isActionMenuOpen ? 45 : 0 }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </motion.svg>
+                Add
+              </motion.button>
+
+              {/* ── Action dropdown ───────────────────────────────────────────── */}
+              <AnimatePresence>
+                {isActionMenuOpen && (
+                  <>
+                    {/* Invisible backdrop to close on outside click */}
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={() => setIsActionMenuOpen(false)}
+                    />
+
+                    <motion.div
+                      id="timetable-action-menu"
+                      initial={{ opacity: 0, scale: 0.92, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.92, y: -6 }}
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      className="absolute right-0 top-full mt-2 z-40 w-56 rounded-2xl overflow-hidden"
+                      style={{
+                        background: 'rgba(255,255,255,0.88)',
+                        backdropFilter: 'blur(24px)',
+                        WebkitBackdropFilter: 'blur(24px)',
+                        border: '1px solid rgba(255,255,255,0.70)',
+                        boxShadow: '0 12px 36px rgba(0,0,0,0.12), 0 2px 8px rgba(26,158,160,0.10)',
+                      }}
+                    >
+                      {/* Upload Timetable */}
+                      <button
+                        id="action-upload-timetable"
+                        onClick={handleUploadTimetable}
+                        className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-teal-50/80 transition-colors cursor-pointer border-b border-slate-100/80"
+                      >
+                        <div
+                          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                          style={{ background: 'rgba(26,158,160,0.12)' }}
+                        >
+                          {/* Sparkles / magic icon */}
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+                            <path d="M5 18l1 2 2-1-1-2-2 1z" />
+                            <path d="M19 15l1 2 2-1-1-2-2 1z" />
+                          </svg>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold text-slate-700 leading-snug">Upload Timetable</p>
+                          <p className="text-xs text-slate-400 mt-0.5">Auto-extract from image</p>
+                        </div>
+                      </button>
+
+                      {/* Add Manually */}
+                      <button
+                        id="action-add-manually"
+                        onClick={handleAddManually}
+                        className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-teal-50/80 transition-colors cursor-pointer"
+                      >
+                        <div
+                          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                          style={{ background: 'rgba(100,116,139,0.10)' }}
+                        >
+                          {/* Pen icon */}
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                          </svg>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold text-slate-700 leading-snug">Add Manually</p>
+                          <p className="text-xs text-slate-400 mt-0.5">Enter details yourself</p>
+                        </div>
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>{/* end flex gap-2 */}
         </div>
 
         {/* ── Day Selector ───────────────────────────────────────────────────── */}
@@ -284,6 +373,37 @@ export default function TimetablePage() {
           })}
         </div>
 
+        {/* ── Group / Batch Selector ─────────────────────────────────────────── */}
+        {availableGroups.length > 1 && (
+          <div className="flex items-center gap-1 mb-6 p-1.5 rounded-2xl overflow-x-auto scrollbar-hide bg-white border border-slate-200/60">
+            {availableGroups.map((group) => {
+              const isActive = viewingGroup.toUpperCase() === group.toUpperCase()
+              return (
+                <button
+                  key={group}
+                  onClick={() => setViewingGroup(group)}
+                  className="relative flex-1 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer whitespace-nowrap min-w-[52px] flex items-center justify-center"
+                  style={{ color: isActive ? '#fff' : '#64748b' }}
+                >
+                  {/* Animated pill background */}
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeGroup"
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+                        boxShadow: '0 4px 14px rgba(26,158,160,0.35)',
+                      }}
+                      transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                    />
+                  )}
+                  <span className="relative z-10">{group}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* ── Timeline + Cards ──────────────────────────────────────────────── */}
         <AnimatePresence mode="wait">
           {isLoading ? (
@@ -303,7 +423,7 @@ export default function TimetablePage() {
                 </div>
               ))}
             </motion.div>
-          ) : slotsForDay.length === 0 ? (
+          ) : filteredSlots.length === 0 ? (
             <motion.div
               key={`empty-${selectedDay}`}
               initial={{ opacity: 0, y: 10 }}
@@ -349,7 +469,7 @@ export default function TimetablePage() {
               />
 
               <div className="space-y-4">
-                {slotsForDay.map((slot, i) => (
+                {filteredSlots.map((slot, i) => (
                   <motion.div
                     key={slot.id}
                     initial={{ opacity: 0, x: -10 }}
@@ -401,6 +521,21 @@ export default function TimetablePage() {
                             >
                               {slot.subject.type}
                             </span>
+                            {/* Group badge — only when viewing ALL, so stacked parallels stay readable */}
+                            {viewingGroup.toUpperCase() === 'ALL' && (
+                              <span
+                                className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                                style={
+                                  !slot.group_designation || slot.group_designation.toUpperCase() === 'ALL'
+                                    ? { background: 'rgba(100,116,139,0.10)', color: '#475569' }
+                                    : { background: 'rgba(26,158,160,0.12)', color: '#0d7c80' }
+                                }
+                              >
+                                {!slot.group_designation || slot.group_designation.toUpperCase() === 'ALL'
+                                  ? 'Universal'
+                                  : `Group ${slot.group_designation.toUpperCase()}`}
+                              </span>
+                            )}
                           </div>
 
                           {/* Time */}
@@ -471,7 +606,7 @@ export default function TimetablePage() {
                   </motion.div>
                 ))}
               </div>
-              
+
               {/* Inline Add Class Button */}
               <div className="ml-[34px] mt-6">
                 <motion.button
@@ -522,6 +657,138 @@ export default function TimetablePage() {
       {isUploadModalOpen && (
         <UploadTimetableModal onClose={() => setIsUploadModalOpen(false)} />
       )}
+
+      {/* ── Help Modal ───────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isHelpOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end justify-center p-4 pb-6 bg-black/40 backdrop-blur-sm"
+            onClick={() => setIsHelpOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 32, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 32, scale: 0.97 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg bg-white rounded-3xl overflow-hidden"
+              style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold"
+                    style={{ background: 'rgba(26,158,160,0.12)', color: '#0d7c80' }}
+                  >
+                    ?
+                  </div>
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">Timetable Tips</h2>
+                </div>
+                <button
+                  onClick={() => setIsHelpOpen(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Tips list */}
+              <div className="px-6 py-5 space-y-4">
+                {[
+                  {
+                    icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                      </svg>
+                    ),
+                    color: '#0d9488',
+                    bg: 'rgba(20,184,166,0.10)',
+                    title: 'Verify data after upload',
+                    body: 'AI extraction isn\'t perfect, so double check subject names, codes, times, and faculty. Use the pencil icon on any class to correct mistakes.',
+                  },
+                  {
+                    icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                    ),
+                    color: '#7c3aed',
+                    bg: 'rgba(124,58,237,0.10)',
+                    title: 'Fix group labels (G1, G2, A, B…)',
+                    body: 'Parallel lab classes are auto labelled G1 or G2. Tap the pencil icon to rename them to match your university label like A, B, Batch 1, or Section 2.',
+                  },
+                  {
+                    icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                      </svg>
+                    ),
+                    color: '#d97706',
+                    bg: 'rgba(217,119,6,0.10)',
+                    title: 'ReUploading keeps attendance mostly safe',
+                    body: 'Reuploading updates your schedule and tries to preserve existing attendance. If a subject is completely removed from the new timetable, its attendance history is permanently lost.',
+                  },
+                  {
+                    icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                    ),
+                    color: '#dc2626',
+                    bg: 'rgba(220,38,38,0.10)',
+                    title: 'Check skipped classes after import',
+                    body: 'Classes with unreadable times or overlapping schedules are skipped. They are listed in the Import Summary so you can add them manually with the + button if needed.',
+                  },
+                  {
+                    icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                    ),
+                    color: '#1a9ea0',
+                    bg: 'rgba(26,158,160,0.10)',
+                    title: 'Use group tabs to filter your view',
+                    body: 'When multiple batches exist tap your group tab to see only your classes. "ALL" shows every parallel class at once so you can compare.',
+                  },
+                ].map((tip, i) => (
+                  <div key={i} className="flex gap-3 items-start">
+                    <div
+                      className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ background: tip.bg, color: tip.color }}
+                    >
+                      {tip.icon}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 mb-0.5">{tip.title}</p>
+                      <p className="text-xs text-slate-500 leading-relaxed">{tip.body}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 pb-6">
+                <button
+                  onClick={() => setIsHelpOpen(false)}
+                  className="w-full py-3 rounded-2xl text-sm font-bold text-white cursor-pointer"
+                  style={{
+                    background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+                    boxShadow: '0 4px 14px rgba(26,158,160,0.35)',
+                  }}
+                >
+                  Got it
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </ProtectedRoute>
   )
 }

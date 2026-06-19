@@ -58,16 +58,17 @@ export async function checkEmailExists(email: string): Promise<boolean> {
  */
 export async function deleteUserAccount(userId: string): Promise<{ success?: boolean; error?: string }> {
   try {
-    // Step 1: Delete the record from the public users table
-    const { error: dbError } = await supabaseAdmin.from('users').delete().eq('id', userId)
-    if (dbError) {
-      return { success: false, error: dbError.message }
-    }
-
-    // Step 2: Only if Step 1 is successful, delete the auth user
+    // Step 1: Delete the auth user first — if this fails, DB record is untouched
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
     if (authError) {
       return { success: false, error: authError.message }
+    }
+
+    // Step 2: Delete the DB record only after auth is confirmed gone
+    const { error: dbError } = await supabaseAdmin.from('users').delete().eq('id', userId)
+    if (dbError) {
+      console.error('[deleteUserAccount] DB cleanup failed after auth deletion:', dbError)
+      // Auth is already deleted so the account is effectively gone — treat as success
     }
 
     return { success: true }

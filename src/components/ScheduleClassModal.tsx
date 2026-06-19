@@ -33,6 +33,7 @@ export default function ScheduleClassModal({ onClose, onSuccess, activeDay }: Pr
     start_time: '09:00',
     end_time: '10:00',
     room_location: '',
+    group_designation: '',
   })
 
   useEffect(() => {
@@ -102,25 +103,62 @@ export default function ScheduleClassModal({ onClose, onSuccess, activeDay }: Pr
       }
 
       const newStart = `${form.start_time}:00`
-      const newEnd = `${form.end_time}:00`
+      const newEnd   = `${form.end_time}:00`
+      const newGroup = form.group_designation.trim().toUpperCase() || 'ALL'
 
-      // Detect collisions for this specific day
+      // Fetch existing slots for this day — need id for potential group upgrades
       const { data: existingSlots, error: fetchError } = await supabase
         .from('timetable')
-        .select('start_time, end_time')
+        .select('id, start_time, end_time, group_designation')
         .eq('user_id', session.user.id)
         .eq('day_of_week', activeDay)
 
       if (fetchError) throw fetchError
 
-      const hasOverlap = existingSlots?.some((slot) => {
+      // Find all slots that overlap in time with the new class
+      const overlapping = (existingSlots ?? []).filter((slot) => {
+        const slotGroup = (slot.group_designation ?? 'ALL').toUpperCase()
+        if (newGroup !== 'ALL' && slotGroup !== 'ALL' && newGroup !== slotGroup) return false
         return newStart < slot.end_time && newEnd > slot.start_time
       })
 
-      if (hasOverlap) {
-        setError('You already have a class scheduled during this time slot on ' + activeDay + '.')
-        setLoading(false)
-        return
+      let finalGroup = newGroup
+
+      if (overlapping.length > 0) {
+        if (newGroup !== 'ALL') {
+          // User specified a group — only block if that exact group already has a class here
+          const exactConflict = overlapping.some(
+            (s) => (s.group_designation ?? 'ALL').toUpperCase() === newGroup
+          )
+          if (exactConflict) {
+            setError(`Group ${newGroup} already has a class at this time on ${activeDay}.`)
+            setLoading(false)
+            return
+          }
+          // Different named group — allow it through
+        } else {
+          // No group specified — auto-assign the next available group number
+          const gNums = overlapping
+            .map((s) => (s.group_designation ?? 'ALL').toUpperCase())
+            .filter((g) => /^G\d+$/.test(g))
+            .map((g) => parseInt(g.slice(1)))
+          const maxNum = gNums.length > 0 ? Math.max(...gNums) : 0
+
+          // Upgrade any 'ALL' overlapping slots to 'G1' so they stay group-specific
+          const allSlots = overlapping.filter(
+            (s) => (s.group_designation ?? 'ALL').toUpperCase() === 'ALL'
+          )
+          if (allSlots.length > 0) {
+            const { error: upgradeErr } = await supabase
+              .from('timetable')
+              .update({ group_designation: 'G1' })
+              .in('id', allSlots.map((s) => s.id))
+            if (upgradeErr) throw upgradeErr
+            finalGroup = 'G2'
+          } else {
+            finalGroup = `G${maxNum + 1}`
+          }
+        }
       }
 
       const { error: insertError } = await supabase.from('timetable').insert({
@@ -130,6 +168,7 @@ export default function ScheduleClassModal({ onClose, onSuccess, activeDay }: Pr
         start_time: newStart,
         end_time: newEnd,
         room_location: form.room_location ? form.room_location.trim() : null,
+        group_designation: finalGroup,
       })
 
       if (insertError) throw insertError
@@ -254,20 +293,37 @@ export default function ScheduleClassModal({ onClose, onSuccess, activeDay }: Pr
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="modal-room_location" className="block text-sm font-medium text-slate-600 mb-1.5 flex justify-between">
-                  <span>Room / Location</span>
-                  <span className="text-slate-400 text-xs">Optional</span>
-                </label>
-                <input
-                  id="modal-room_location"
-                  name="room_location"
-                  type="text"
-                  placeholder="e.g. Room 402, Block A"
-                  value={form.room_location}
-                  onChange={handleChange}
-                  className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="modal-room_location" className="block text-sm font-medium text-slate-600 mb-1.5 flex justify-between">
+                    <span>Room / Location</span>
+                    <span className="text-slate-400 text-xs">Optional</span>
+                  </label>
+                  <input
+                    id="modal-room_location"
+                    name="room_location"
+                    type="text"
+                    placeholder="e.g. Lab 218"
+                    value={form.room_location}
+                    onChange={handleChange}
+                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="modal-group_designation" className="block text-sm font-medium text-slate-600 mb-1.5 flex justify-between">
+                    <span>Group</span>
+                    <span className="text-slate-400 text-xs">Optional</span>
+                  </label>
+                  <input
+                    id="modal-group_designation"
+                    name="group_designation"
+                    type="text"
+                    placeholder="e.g. G2, A, B"
+                    value={form.group_designation}
+                    onChange={handleChange}
+                    className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">

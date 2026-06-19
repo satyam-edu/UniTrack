@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useRouter } from 'next/navigation'
-import { parseTimetableImage, importConfirmedSchedule } from '@/app/actions/extractTimetable'
-import type { ExtractedClass } from '@/app/actions/extractTimetable'
+import { parseTimetableImage } from '@/app/actions/extractTimetable'
+import { saveTimetableToDB } from '@/app/actions/saveTimetable'
+import type { ExtractedClass, SkippedClass } from '@/app/actions/extractTimetable'
 import { supabase } from '@/lib/supabase'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -15,7 +16,6 @@ interface Toast { message: string; type: ToastType }
 interface Props { onClose: () => void }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const CATEGORIES = ['Theory', 'Lab', null]
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -36,8 +36,15 @@ export default function UploadTimetableModal({ onClose }: Props) {
   const [extractedData, setExtractedData] = useState<ExtractedClass[] | null>(null)
   const [editingIndex, setEditingIndex]   = useState<number | null>(null)
 
-  const isLoading = isParsing || isImporting
-  const isReviewMode = extractedData !== null
+  // ── Summary state (shown after import) ───────────────────────────────────
+  const [summaryData, setSummaryData] = useState<{
+    count: number
+    skippedClasses: SkippedClass[]
+  } | null>(null)
+
+  const isLoading    = isParsing || isImporting
+  const isSummary    = summaryData !== null
+  const isReviewMode = extractedData !== null && !isSummary
 
   const loadingPhrases = ["Scanning grid lines...", "Identifying subject codes...", "Organizing your week..."]
   const [parsingTextIdx, setParsingTextIdx] = useState(0)
@@ -141,10 +148,10 @@ export default function UploadTimetableModal({ onClose }: Props) {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) throw new Error('Session expired. Please log in again.')
 
-      const result = await importConfirmedSchedule(extractedData, session.access_token)
+      const result = await saveTimetableToDB(extractedData, session.access_token)
       if (result.success) {
-        setToast({ message: `${result.count} class${result.count !== 1 ? 'es' : ''} added to your schedule!`, type: 'success' })
-        setTimeout(() => { router.refresh(); onClose() }, 1200)
+        router.refresh()
+        setSummaryData({ count: result.count, skippedClasses: result.skippedClasses })
       } else {
         setToast({ message: result.error, type: 'error' })
       }
@@ -193,16 +200,18 @@ export default function UploadTimetableModal({ onClose }: Props) {
           <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-slate-100 flex-shrink-0">
             <div>
               <h2 className="text-lg font-bold tracking-tight text-slate-900">
-                {isReviewMode ? 'Review Extracted Schedule' : 'Upload Timetable'}
+                {isSummary ? 'Import Summary' : isReviewMode ? 'Review Extracted Schedule' : 'Upload Timetable'}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                {isReviewMode
+                {isSummary
+                  ? `${summaryData!.count} imported · ${summaryData!.skippedClasses.length} skipped`
+                  : isReviewMode
                   ? `${extractedData!.length} class${extractedData!.length !== 1 ? 'es' : ''} detected · Edit before importing`
                   : 'AI-powered extraction · V2.0'}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {isReviewMode && !isImporting && (
+              {isReviewMode && !isImporting && !isSummary && (
                 <button
                   onClick={() => { setExtractedData(null); setEditingIndex(null) }}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
@@ -226,7 +235,67 @@ export default function UploadTimetableModal({ onClose }: Props) {
 
           {/* ── Body ──────────────────────────────────────────────────────── */}
           <AnimatePresence mode="wait" initial={false}>
-            {!isReviewMode ? (
+            {isSummary ? (
+              /* ── Summary View ────────────────────────────────────────── */
+              <motion.div
+                key="summary"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="px-5 pb-5 pt-4 flex flex-col gap-4"
+              >
+                {/* Success banner */}
+                <div className="flex flex-col items-center py-6 gap-3 text-center">
+                  <div
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                    style={{ background: 'rgba(26,158,160,0.12)' }}
+                  >
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-lg font-extrabold text-slate-900">Import Complete</p>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      {summaryData!.count} class{summaryData!.count !== 1 ? 'es' : ''} added to your schedule
+                    </p>
+                  </div>
+                </div>
+
+                {/* Skipped list — only shown if something was skipped */}
+                {summaryData!.skippedClasses.length > 0 && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-amber-200 flex items-center gap-2">
+                      <span className="text-amber-500 text-sm">⚠️</span>
+                      <p className="text-xs font-bold text-amber-800">
+                        {summaryData!.skippedClasses.length} class{summaryData!.skippedClasses.length !== 1 ? 'es' : ''} were skipped
+                      </p>
+                    </div>
+                    <div className="divide-y divide-amber-100 max-h-48 overflow-y-auto">
+                      {summaryData!.skippedClasses.map((cls, i) => (
+                        <div key={i} className="px-4 py-2.5">
+                          <p className="text-xs font-semibold text-slate-700 truncate">{cls.subject_name}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {cls.day} · {cls.start_time} – {cls.end_time}
+                          </p>
+                          <p className="text-[11px] text-amber-700 font-medium mt-0.5">{cls.reason}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* CTA */}
+                <button
+                  onClick={onClose}
+                  className="w-full py-3.5 rounded-2xl font-bold text-sm text-white cursor-pointer"
+                  style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 16px rgba(26,158,160,0.30)' }}
+                >
+                  View My Schedule →
+                </button>
+              </motion.div>
+            ) : !isReviewMode ? (
               /* ── Upload View ─────────────────────────────────────────── */
               <motion.div
                 key="upload"
@@ -417,15 +486,26 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               />
                             </div>
                           </div>
-                          {/* Faculty */}
-                          <div>
-                            <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Faculty</label>
-                            <input
-                              value={cls.faculty_name ?? ''}
-                              onChange={e => updateClass(i, 'faculty_name', e.target.value || null)}
-                              placeholder="Optional"
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
-                            />
+                          {/* Faculty + Group row */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Faculty</label>
+                              <input
+                                value={cls.faculty_name ?? ''}
+                                onChange={e => updateClass(i, 'faculty_name', e.target.value || null)}
+                                placeholder="Optional"
+                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Group</label>
+                              <input
+                                value={cls.group_designation ?? 'ALL'}
+                                onChange={e => updateClass(i, 'group_designation', e.target.value || 'ALL')}
+                                placeholder="ALL"
+                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+                              />
+                            </div>
                           </div>
                           {/* Actions */}
                           <div className="flex gap-2 pt-1">
@@ -465,6 +545,12 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               {cls.subject_code && (
                                 <span className="text-[10px] text-slate-400 font-mono">{cls.subject_code}</span>
                               )}
+                              {cls.group_designation && cls.group_designation !== 'ALL' && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                                  style={{ background: 'rgba(245,158,11,0.10)', color: '#d97706' }}>
+                                  {cls.group_designation}
+                                </span>
+                              )}
                             </div>
                           </div>
                           {/* Edit button */}
@@ -476,6 +562,19 @@ export default function UploadTimetableModal({ onClose }: Props) {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          {/* Delete button */}
+                          <button
+                            onClick={() => removeClass(i)}
+                            aria-label="Delete class"
+                            className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer transition-colors flex-shrink-0"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
                             </svg>
                           </button>
                         </div>

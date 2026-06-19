@@ -1,7 +1,6 @@
 'use server'
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { supabaseAdmin } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -15,6 +14,16 @@ export interface ExtractedClass {
   start_time: string        // e.g. '09:00 AM'
   end_time: string          // e.g. '11:00 AM'
   room: string | null
+  group_designation?: string | null
+  is_elective?: boolean
+}
+
+export interface SkippedClass {
+  subject_name: string
+  day: string
+  start_time: string
+  end_time: string
+  reason: string
 }
 
 export type ParseResult =
@@ -22,40 +31,10 @@ export type ParseResult =
   | { success: false; error: string }
 
 export type ImportResult =
-  | { success: true; count: number }
+  | { success: true; count: number; skipped: number; skippedClasses: SkippedClass[] }
   | { success: false; error: string }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Convert a 12-hour time string like "09:00 AM" to a DB-friendly "HH:MM:SS" */
-function to24HourDb(timeStr: string): string {
-  try {
-    const trimmed = timeStr.trim()
-    const date = new Date(`1970-01-01 ${trimmed}`)
-    if (isNaN(date.getTime())) {
-      // Already 24-hour or HH:MM — normalise
-      if (trimmed.split(':').length >= 2) {
-        const parts = trimmed.split(':')
-        const h = parts[0].padStart(2, '0')
-        const m = (parts[1] ?? '00').padStart(2, '0')
-        return `${h}:${m}:00`
-      }
-    }
-    const h = String(date.getHours()).padStart(2, '0')
-    const m = String(date.getMinutes()).padStart(2, '0')
-    return `${h}:${m}:00`
-  } catch {
-    return '00:00:00'
-  }
-}
-
-/** Normalise AI category value to the DB-accepted enum */
-function normaliseType(category: string | null): string {
-  if (!category) return 'Theory'
-  const lower = category.toLowerCase()
-  if (lower.includes('lab') || lower.includes('practical')) return 'Lab'
-  return 'Theory'
-}
 
 /** Build an authenticated supabase-js client from a hand-off token */
 function buildClient(token: string) {
@@ -95,32 +74,57 @@ export async function parseTimetableImage(formData: FormData): Promise<ParseResu
 
   const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview', generationConfig: { responseMimeType: "application/json" } })
 
-  const prompt = `You are an expert data extraction assistant. Analyze the provided college timetable image and extract the schedule into a strict JSON array.
+  const extractionPrompt = `You are a world-class data extraction AI. Your job is to convert complex, messy visual university timetables into a strict JSON array.
 
-CRITICAL INSTRUCTIONS FOR READING THE TABLE:
-1. Merged Cells (Multi-hour classes): Look carefully at the vertical lines separating the time columns. If a class block spans across multiple time columns visually (e.g., a single box covering both "11-12 AM" and "12-01 PM"), it is a continuous multi-hour class. 
-2. Calculate the True Time: For merged cells, the "start_time" is the beginning of the first column it touches, and the "end_time" is the end of the last column it touches (e.g., a cell spanning 11-12 and 12-01 means Start: 11:00 AM, End: 01:00 PM). Do NOT split it into two duplicate classes.
-3. Ignore Breaks: Ignore empty columns or general breaks (like the 1:00 PM - 1:30 PM gap).
-4. Formatting: Ensure start_time and end_time are strictly formatted like "09:00 AM", "01:30 PM", etc.
+Before extracting, apply these UNIVERSAL REASONING RULES:
 
-Return ONLY a valid, raw JSON array (no markdown blockticks like \`\`\`json, no conversational text) matching this exact schema for every single class block found:
-[
-  {
-    "subject_name": "string (The full name of the subject)",
-    "subject_code": "string (e.g., ITE348T or ICT312P)",
-    "faculty_name": "string (or null if missing)",
-    "category": "string ('Theory', 'Lab', or null)",
-    "day": "string (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday)",
-    "start_time": "string (e.g., 09:00 AM)",
-    "end_time": "string (e.g., 11:00 AM)",
-    "room": "string (or null if missing)"
-  }
-]`
+RULE 1: IDENTIFY THE LEGEND
+Look at the bottom or margins of the image. Universities usually provide a "Key" or "Legend" mapping short codes to full names (e.g., "BP-201" → "HUMAN ANATOMY AND PHYSIOLOGY"). Use this to fill in full subject_name values.
+Also expand faculty abbreviation codes using the same legend (e.g., "PL" → "Dr. Pallavi", "SKR" → "Dr. Sakshi"). Never output raw abbreviations in faculty_name — always expand them.
 
+RULE 2: SEPARATE CODES FROM COHORTS
+Ignore branch, semester, or cohort names (e.g., "CSE_VI", "B.Tech", "Sem 6", "B.Pharm"). These are NOT subjects. Look for alphanumeric subject codes (e.g., "ICT 312T", "BP210(P)", "ITE 346T").
+
+RULE 3: VISUAL SPANS = TIME DURATIONS
+Look at the physical width of the cell in the grid.
+- If a cell visually spans across three 1-hour columns (e.g., starts under 9:00 and ends under 12:00), you MUST output ONE object with start_time: "9:00 AM" and end_time: "12:00 PM". Do NOT default to 1-hour slots.
+
+RULE 3B: READ COLUMN HEADERS EXACTLY — DO NOT ROUND OR ASSUME
+Column headers show the precise start time of each slot. You must read them as written.
+- LUNCH/BREAK columns (labeled "Lunch", "Break", or similar) are NOT lecture slots. They are narrow separator columns between morning and afternoon. Do NOT count them as a time slot.
+- After a Lunch column, the next column's header is the actual first afternoon slot — it may be an unusual time like "1:30 PM" (not "1:00 PM") due to a 30-minute lunch. Read and use that exact time.
+- WRONG: Seeing "Lunch 13:00-13:30" then assuming afternoon starts at "2:30 PM"
+- RIGHT: Seeing "Lunch 13:00-13:30" then reading the next column header which says "1:30 pm" and using "1:30 PM" as the start time
+
+RULE 4: PARALLEL BATCH RESOLUTION
+When multiple rows of text appear stacked inside a single grid cell, each row is a SEPARATE class for a SEPARATE batch. Extract EACH row as its own JSON object with the same start_time and end_time.
+Look carefully for explicit batch indicators — they may appear as "(A)", "(B)", "(C)", "G1", "G2", "Batch-II", etc. Extract this into "group_designation".
+CRITICAL: If a cell contains multiple stacked classes with NO explicit batch label, they are still parallel classes for different student groups — assign them "G1", "G2", "G3" in order of appearance (top to bottom). Only use "ALL" when a class appears ALONE in its cell with no other class sharing the same time slot.
+
+RULE 5: LAB VS THEORY
+If the subject code contains "(P)", "LAB", or "PRA", or the class spans 2 or more hours, set "category" to "Lab". Otherwise set "category" to "Theory".
+
+Output a JSON array. Each object must have exactly these keys:
+subject_name, subject_code, faculty_name, day, start_time, end_time, room, group_designation, category
+
+Example of one correct object:
+{
+  "subject_name": "Human Anatomy and Physiology",
+  "subject_code": "BP201",
+  "faculty_name": "Dr. Pallavi",
+  "day": "Monday",
+  "start_time": "1:30 PM",
+  "end_time": "2:30 PM",
+  "room": null,
+  "group_designation": "ALL",
+  "category": "Theory"
+}`
+
+  // ── First pass ────────────────────────────────────────────────────────────
   let rawText: string
   try {
     const result = await model.generateContent([
-      prompt,
+      extractionPrompt,
       { inlineData: { mimeType, data: base64Data } },
     ])
     rawText = result.response.text()
@@ -129,124 +133,49 @@ Return ONLY a valid, raw JSON array (no markdown blockticks like \`\`\`json, no 
     return { success: false, error: 'AI extraction failed. Please try again.' }
   }
 
-  // ── Parse JSON ────────────────────────────────────────────────────────────
-  let classes: ExtractedClass[]
+  let firstPassClasses: ExtractedClass[]
   try {
     rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim()
-    classes = JSON.parse(rawText)
-    if (!Array.isArray(classes)) throw new Error('Response is not an array')
+    firstPassClasses = JSON.parse(rawText)
+    if (!Array.isArray(firstPassClasses)) throw new Error('Response is not an array')
   } catch {
     console.error('[parseTimetableImage] JSON parse error. Raw text:', rawText)
     return { success: false, error: 'Could not parse the AI response. Please try a clearer image.' }
   }
 
-  if (classes.length === 0) {
+  if (firstPassClasses.length === 0) {
     return { success: false, error: 'No classes were detected in the image. Please try a clearer photo.' }
   }
 
-  return { success: true, classes }
-}
+  // ── Second pass: self-verification ───────────────────────────────────────
+  // Ask Gemini to review its own output against the original image and fix mistakes.
+  const verificationPrompt = `You extracted this timetable data in a first pass:
 
-// ── Action 2: Confirm & import the reviewed schedule ─────────────────────────
+${JSON.stringify(firstPassClasses, null, 2)}
 
-export async function importConfirmedSchedule(
-  classes: ExtractedClass[],
-  token: string
-): Promise<ImportResult> {
-  // ── Auth ───────────────────────────────────────────────────────────────────
-  if (!token) throw new Error('You must be logged in.')
+Now carefully re-examine the original image and check for these common mistakes — fix only what is wrong:
 
-  const { data: { user }, error: authError } = await buildClient(token).auth.getUser()
-  if (authError || !user) throw new Error('Invalid or expired session.')
+1. STACKED CELLS: If multiple rows inside a single grid cell were collapsed into one entry, split them into separate objects with the same start_time and end_time.
+2. FACULTY NAMES: If any faculty_name is still a short abbreviation code (2-4 capital letters like "PL", "WA"), expand it to the full name using the legend in the image.
+3. TIME SPANS: If a lab class that visually spans multiple hours was split into separate 1-hour slots, merge them into one entry with the correct start and end time. Also verify the start_time against the actual column header — if the timetable has a "Lunch" or "Break" column, that column is NOT a lecture slot; the next column to its right is the actual first afternoon slot (e.g., "1:30 PM", not "2:30 PM").
+4. GROUP DESIGNATIONS: Verify each class has the correct group_designation. If multiple classes share the same time slot — with or without explicit batch labels — they MUST each have a unique designation (A, B, C or G1, G2, G3). Only use "ALL" for a class that is truly alone in its time slot with no parallel entries.
 
-  const userId = user.id
+Return the corrected JSON array only. Do not change entries that are already correct.`
 
-  // ── Overwrite: wipe existing schedule before importing ─────────────────────
-  // Delete timetable first (FK references subjects), then subjects.
-  await supabaseAdmin.from('timetable').delete().eq('user_id', userId)
-  await supabaseAdmin.from('subjects').delete().eq('user_id', userId)
-
-  // ── Pool & Placement logic ─────────────────────────────────────────────────
-  let classesAdded = 0
-
-
-  for (const cls of classes) {
-    if (!cls.subject_name || !cls.day || !cls.start_time || !cls.end_time) continue
-
-    const subjectName = cls.subject_name.trim()
-    const subjectCode = (cls.subject_code ?? '').trim()
-    const startTimeDb = to24HourDb(cls.start_time)
-    const endTimeDb = to24HourDb(cls.end_time)
-    const subjectType = normaliseType(cls.category)
-
-    // ── STEP A: Pool — find or create the subject ──────────────────────────
-    let subjectId: string
-
-    const { data: existingSubject } = await supabaseAdmin
-      .from('subjects')
-      .select('id')
-      .eq('user_id', userId)
-      .or(
-        subjectCode
-          ? `subject_code.ilike.${subjectCode},subject_name.ilike.${subjectName}`
-          : `subject_name.ilike.${subjectName}`
-      )
-      .maybeSingle()
-
-    if (existingSubject) {
-      subjectId = existingSubject.id
-    } else {
-      const { data: newSubject, error: subjectInsertError } = await supabaseAdmin
-        .from('subjects')
-        .insert({
-          user_id: userId,
-          subject_name: subjectName,
-          subject_code: subjectCode || subjectName.slice(0, 10).toUpperCase(),
-          faculty_name: cls.faculty_name?.trim() || null,
-          type: subjectType,
-        })
-        .select('id')
-        .single()
-
-      if (subjectInsertError || !newSubject) {
-        console.error('[importConfirmedSchedule] Subject insert error:', subjectInsertError)
-        continue
-      }
-      subjectId = newSubject.id
+  let finalClasses = firstPassClasses
+  try {
+    const verifyResult = await model.generateContent([
+      verificationPrompt,
+      { inlineData: { mimeType, data: base64Data } },
+    ])
+    const verifyText = verifyResult.response.text().replace(/```json/gi, '').replace(/```/g, '').trim()
+    const verified: ExtractedClass[] = JSON.parse(verifyText)
+    if (Array.isArray(verified) && verified.length > 0) {
+      finalClasses = verified
     }
-
-    // ── STEP B: Placement — collision check ────────────────────────────────
-    const { data: existingSlots } = await supabaseAdmin
-      .from('timetable')
-      .select('start_time, end_time')
-      .eq('user_id', userId)
-      .eq('day_of_week', cls.day)
-
-    const hasCollision = existingSlots?.some(
-      (slot) => startTimeDb < slot.end_time && endTimeDb > slot.start_time
-    ) ?? false
-
-    if (hasCollision) continue
-
-    // ── Insert slot ────────────────────────────────────────────────────────
-    const { error: timetableInsertError } = await supabaseAdmin
-      .from('timetable')
-      .insert({
-        user_id: userId,
-        subject_id: subjectId,
-        day_of_week: cls.day,
-        start_time: startTimeDb,
-        end_time: endTimeDb,
-        room_location: cls.room?.trim() || null,
-      })
-
-    if (timetableInsertError) {
-      console.error('[importConfirmedSchedule] Timetable insert error:', timetableInsertError)
-      continue
-    }
-
-    classesAdded++
+  } catch {
+    // Second pass failed — silently fall back to the first pass result
   }
 
-  return { success: true, count: classesAdded }
+  return { success: true, classes: finalClasses }
 }
