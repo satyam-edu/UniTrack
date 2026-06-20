@@ -77,30 +77,12 @@ export async function saveTimetableToDB(
 
   const userId = user.id
 
-  // ── Step 1: Auto-assign group designations for unlabeled parallel classes ──
-  // If Gemini outputs "ALL" for multiple classes sharing the same day + time slot,
-  // they are implicitly parallel. Promote them to G1/G2/G3.
-  const parallelSlotCounts  = new Map<string, number>()
-  const parallelSlotIndexes = new Map<string, number>()
-
-  for (const cls of classes) {
-    if (!cls.group_designation || cls.group_designation.toUpperCase() === 'ALL') {
-      const key = `${cls.day}|${cls.start_time}|${cls.end_time}`
-      parallelSlotCounts.set(key, (parallelSlotCounts.get(key) || 0) + 1)
-    }
-  }
-
-  const processedClasses: ExtractedClass[] = classes.map((cls) => {
-    if (!cls.group_designation || cls.group_designation.toUpperCase() === 'ALL') {
-      const key = `${cls.day}|${cls.start_time}|${cls.end_time}`
-      if ((parallelSlotCounts.get(key) || 0) > 1) {
-        const idx = parallelSlotIndexes.get(key) ?? 0
-        parallelSlotIndexes.set(key, idx + 1)
-        return { ...cls, group_designation: `G${idx + 1}` }
-      }
-    }
-    return cls
-  })
+  // ── Step 1: Import classes exactly as extracted ───────────────────────────
+  // Unlabeled parallel classes are intentionally kept as Universal (ALL). We do NOT
+  // auto-assign synthetic G1/G2 labels — the user assigns their real batch labels
+  // (A, B, …) via the manual edit flow, and the Home page locks attendance on any
+  // unresolved overlap until they do. This keeps group labels meaningful and consistent.
+  const processedClasses: ExtractedClass[] = classes
 
   // ── Step 2: Deduplicate subjects by normalised code/name ──────────────────
   const subjectCanonical = new Map<

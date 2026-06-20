@@ -98,16 +98,19 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
 
       if (fetchError) throw fetchError
 
-      // Group-aware overlap: two different specific groups never conflict each other
+      // Overlap rule: only a true same-group double-book is a conflict. Universal (ALL)
+      // classes may overlap anything, and different specific groups never clash. This
+      // keeps the editor permissive so the user can freely set a class to Universal or to
+      // any group — the Home page locks attendance on any unresolved overlap.
       const hasOverlap = existingSlots?.some((s) => {
         if (s.id === slot.id) return false
+        if (!(newStart < s.end_time && newEnd > s.start_time)) return false
         const existingGroup = (s.group_designation ?? 'ALL').toUpperCase()
-        if (newGroup !== 'ALL' && existingGroup !== 'ALL' && newGroup !== existingGroup) return false
-        return newStart < s.end_time && newEnd > s.start_time
+        return newGroup !== 'ALL' && existingGroup === newGroup
       })
 
       if (hasOverlap) {
-        setError('Time conflicts with another class in the same group.')
+        setError(`Group ${newGroup} already has a class at this time.`)
         setLoading(false)
         return
       }
@@ -220,7 +223,7 @@ export default function EditClassModal({ slot, onClose, onSuccess }: Props) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Group</label>
-                <input name="group_designation" type="text" placeholder="e.g. G1, A, B" value={form.group_designation} onChange={handleChange}
+                <input name="group_designation" type="text" placeholder="e.g. A, B, C" value={form.group_designation} onChange={handleChange}
                   className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all" />
               </div>
             </div>

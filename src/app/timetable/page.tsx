@@ -9,7 +9,6 @@ import AddClassModal from '@/components/AddClassModal'
 import EditClassModal from '@/components/EditClassModal'
 import ScheduleClassModal from '@/components/ScheduleClassModal'
 import UploadTimetableModal from '@/components/UploadTimetableModal'
-import GroupOnboardingModal from '@/components/GroupOnboardingModal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,7 +62,6 @@ export default function TimetablePage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [selectedDay, setSelectedDay] = useState<string>('Monday')
   const [viewingGroup, setViewingGroup] = useState<string>('ALL')
-  const [primaryGroup, setPrimaryGroup] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -103,15 +101,11 @@ export default function TimetablePage() {
 
   useEffect(() => { loadTimetable() }, [loadTimetable])
 
-  // ── Hydration-safe group load ────────────────────────────────────────────────
-  // primaryGroup is loaded from localStorage so the GroupOnboardingModal doesn't
-  // re-appear, but viewingGroup stays 'ALL' — the timetable page always opens
-  // showing every class so the user can see the full picture.
+  // ── Hydration guard ──────────────────────────────────────────────────────────
+  // The timetable page always opens on viewingGroup 'ALL' so the user sees every
+  // class; the explorer's group tabs switch the transient view from there.
   useEffect(() => {
     setIsMounted(true)
-    const primary = localStorage.getItem('unitrack_primary_group')
-    setPrimaryGroup(primary)
-    // intentionally NOT setting viewingGroup here — 'ALL' is the correct default
   }, [])
 
   // ── Action menu handlers ──────────────────────────────────────────────────────
@@ -148,15 +142,6 @@ export default function TimetablePage() {
   // ── Loading state rendered inline — no full-page gate
   const slotsForDay = schedule[selectedDay] ?? []
 
-  // ── Primary group persistence — only the onboarding modal mutates this ──────
-  function handleSelectPrimary(group: string) {
-    setPrimaryGroup(group)
-    setViewingGroup(group)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('unitrack_primary_group', group)
-    }
-  }
-
   // ── Derive the list of available batch/groups from the loaded schedule ──────
   const availableGroups = useMemo(() => {
     const set = new Set<string>()
@@ -170,8 +155,6 @@ export default function TimetablePage() {
   }, [schedule])
 
   // Batch groups only (excludes 'ALL') — used for the onboarding modal
-  const batchGroups = availableGroups.filter((g) => g !== 'ALL')
-
   // ── Filter uses the transient viewingGroup (does NOT touch the primary group) ──
   const filteredSlots = slotsForDay.filter((slot) => {
     // If 'ALL' is being viewed, bypass filtering and display every parallel slot together
@@ -189,16 +172,6 @@ export default function TimetablePage() {
 
   // Avoid hydration mismatch: don't render group-dependent UI until mounted
   if (!isMounted) return null
-
-  // Mandatory first-time selection when no primary group is set yet
-  if (primaryGroup === null && batchGroups.length > 0) {
-    return (
-      <ProtectedRoute>
-        <GroupOnboardingModal groups={batchGroups} onSelect={handleSelectPrimary} schedule={schedule} />
-        <BottomNav />
-      </ProtectedRoute>
-    )
-  }
 
   return (
     <ProtectedRoute>
@@ -607,8 +580,27 @@ export default function TimetablePage() {
                 ))}
               </div>
 
-              {/* Inline Add Class Button */}
-              <div className="ml-[34px] mt-6">
+              {/* Inline Add Class Button + manual-fix helper */}
+              <div className="ml-[34px] mt-6 space-y-3">
+                {/* Soft helper hint — points users to the per-card edit/delete icons and this add button */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex items-start gap-2 px-1"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1a9ea0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-[3px] opacity-60">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Find a discrepancy? You can{' '}
+                    <span className="font-semibold text-slate-500">edit</span>,{' '}
+                    <span className="font-semibold text-slate-500">delete</span>, or add classes
+                    manually to fix your schedule.
+                  </p>
+                </motion.div>
+
                 <motion.button
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -720,8 +712,8 @@ export default function TimetablePage() {
                     ),
                     color: '#7c3aed',
                     bg: 'rgba(124,58,237,0.10)',
-                    title: 'Fix group labels (G1, G2, A, B…)',
-                    body: 'Parallel lab classes are auto labelled G1 or G2. Tap the pencil icon to rename them to match your university label like A, B, Batch 1, or Section 2.',
+                    title: 'Fix group labels (A, B, C…)',
+                    body: 'Parallel classes are auto-labelled A, B, C in order of appearance. Tap the pencil icon to rename them to match your university’s labels, like Batch 1 or Section 2.',
                   },
                   {
                     icon: (
@@ -743,7 +735,7 @@ export default function TimetablePage() {
                     color: '#dc2626',
                     bg: 'rgba(220,38,38,0.10)',
                     title: 'Check skipped classes after import',
-                    body: 'Classes with unreadable times or overlapping schedules are skipped. They are listed in the Import Summary so you can add them manually with the + button if needed.',
+                    body: 'Classes with unreadable times, or that clash with another class in the same group, are skipped during import. They\'re listed in the Import Summary, add them manually with the + button if needed.',
                   },
                   {
                     icon: (
@@ -754,7 +746,18 @@ export default function TimetablePage() {
                     color: '#1a9ea0',
                     bg: 'rgba(26,158,160,0.10)',
                     title: 'Use group tabs to filter your view',
-                    body: 'When multiple batches exist tap your group tab to see only your classes. "ALL" shows every parallel class at once so you can compare.',
+                    body: 'When your timetable has multiple groups, tap a group tab to preview only those classes. "ALL" shows every parallel class at once so you can compare.',
+                  },
+                  {
+                    icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    ),
+                    color: '#0d7c80',
+                    bg: 'rgba(26,158,160,0.10)',
+                    title: 'Set your group to unlock attendance',
+                    body: 'If parallel classes overlap and you haven\'t picked a group yet, Home locks attendance to protect your percentage from double-counting. Set your group in Profile → Group to see only your classes and mark attendance.',
                   },
                 ].map((tip, i) => (
                   <div key={i} className="flex gap-3 items-start">

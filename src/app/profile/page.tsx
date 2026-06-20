@@ -25,6 +25,7 @@ interface UserProfile {
   target_attendance: number | null
   theory_mode: string | null
   lab_mode: string | null
+  primary_group: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -527,13 +528,14 @@ export default function ProfilePage() {
   // Attendance settings
   const [editingSettings, setEditingSettings] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
+  const [showModeWarning, setShowModeWarning] = useState(false)
   const [settingsForm, setSettingsForm] = useState({
     target_attendance: '75',
     theory_mode: 'class',
     lab_mode: 'class',
   })
 
-  // Batch / Group (source of truth — persisted to localStorage)
+  // Group (source of truth — persisted to DB, cached in localStorage)
   const [primaryGroup, setPrimaryGroup] = useState<string>('ALL')
   const [availableGroups, setAvailableGroups] = useState<string[]>([])
   const [editingGroup, setEditingGroup] = useState(false)
@@ -556,16 +558,23 @@ export default function ProfilePage() {
         theory_mode: data.theory_mode || 'class',
         lab_mode: data.lab_mode || 'class',
       })
+
+      // DB is authoritative for primary_group; fall back to localStorage only if null
+      const dbGroup = data.primary_group ?? localStorage.getItem('unitrack_primary_group') ?? 'ALL'
+      setPrimaryGroup(dbGroup)
+      setGroupDraft(dbGroup)
+      if (data.primary_group) localStorage.setItem('unitrack_primary_group', data.primary_group)
+
       setLoading(false)
     }
     loadProfile()
   }, [])
 
-  // ── Load Batch/Group preference + available groups from the timetable ───────
+  // ── Load available groups from the timetable (primary_group loaded above in loadProfile) ──
   useEffect(() => {
-    const saved = localStorage.getItem('unitrack_primary_group') || 'ALL'
-    setPrimaryGroup(saved)
-    setGroupDraft(saved)
+    // Fast localStorage read for initial display — loadProfile will overwrite with DB value
+    const saved = localStorage.getItem('unitrack_primary_group')
+    if (saved) { setPrimaryGroup(saved); setGroupDraft(saved) }
 
     async function loadGroups() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -612,8 +621,26 @@ export default function ProfilePage() {
     }
   }
 
-  async function handleSaveSettings(e: React.FormEvent) {
+  function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault()
+    if (!user) return
+
+    // A mode change recalculates all past and future attendance, so confirm first.
+    const currentTheory = user.theory_mode || 'class'
+    const currentLab = user.lab_mode || 'class'
+    const modeChanged =
+      settingsForm.theory_mode !== currentTheory ||
+      settingsForm.lab_mode !== currentLab
+
+    if (modeChanged) {
+      setShowModeWarning(true)
+      return
+    }
+
+    performSaveSettings()
+  }
+
+  async function performSaveSettings() {
     if (!user) return
     setSavingSettings(true)
     const target = parseInt(settingsForm.target_attendance, 10)
@@ -627,6 +654,7 @@ export default function ProfilePage() {
       setUser((prev) => prev ? { ...prev, target_attendance: target, theory_mode: settingsForm.theory_mode, lab_mode: settingsForm.lab_mode } : prev)
       setEditingSettings(false)
     }
+    setShowModeWarning(false)
     setSavingSettings(false)
   }
 
@@ -634,11 +662,21 @@ export default function ProfilePage() {
     setUser((prev) => prev ? { ...prev, ...updated } : prev)
   }
 
-  function handleSaveGroup() {
-    setPrimaryGroup(groupDraft)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('unitrack_primary_group', groupDraft)
+  async function handleSaveGroup() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      const { error } = await supabase
+        .from('users')
+        .update({ primary_group: groupDraft })
+        .eq('id', session.user.id)
+      if (error) {
+        setToastMessage('Failed to save group preference.')
+        setTimeout(() => setToastMessage(''), 3000)
+        return
+      }
     }
+    setPrimaryGroup(groupDraft)
+    localStorage.setItem('unitrack_primary_group', groupDraft)
     setEditingGroup(false)
   }
 
@@ -826,7 +864,7 @@ export default function ProfilePage() {
           )}
         </motion.div>
 
-        {/* ── 3. Batch / Group Card ──────────────────────────────────────── */}
+        {/* ── 3. Group Card ──────────────────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -836,7 +874,7 @@ export default function ProfilePage() {
         >
           {/* Section header */}
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(26,158,160,0.10)' }}>
-            <h3 className="text-xs font-bold tracking-widest text-text-muted uppercase">Batch / Group</h3>
+            <h3 className="text-xs font-bold tracking-widest text-text-muted uppercase">Group</h3>
             {!editingGroup && (
               <button
                 onClick={() => { setGroupDraft(primaryGroup); setEditingGroup(true) }}
@@ -851,29 +889,48 @@ export default function ProfilePage() {
           {editingGroup ? (
             <div className="p-5 space-y-4">
               <p className="text-xs text-text-secondary leading-relaxed">
-                Pick your primary batch. This locks your Home schedule to the right classes. The Timetable explorer can still preview other groups.
+                Pick your primary group. This locks your Home schedule to the right classes. The Timetable explorer can still preview other groups.
               </p>
 
-              {/* Group choices */}
-              <div className="grid grid-cols-4 gap-2">
-                {availableGroups.map((group) => {
-                  const active = groupDraft.toUpperCase() === group.toUpperCase()
-                  return (
-                    <button
-                      key={group}
-                      type="button"
-                      onClick={() => setGroupDraft(group)}
-                      className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all duration-200 active:scale-95"
-                      style={active
-                        ? { background: 'rgba(26,158,160,0.15)', border: '1.5px solid #1a9ea0', color: '#1a9ea0' }
-                        : { background: 'transparent', borderColor: 'rgba(26,158,160,0.20)', color: '#7a93a8' }
-                      }
-                    >
-                      {group}
-                    </button>
-                  )
-                })}
-              </div>
+              {availableGroups.length === 0 ? (
+                <div className="rounded-xl px-4 py-3 text-xs text-slate-500 leading-relaxed"
+                  style={{ background: 'rgba(100,116,139,0.07)', border: '1px solid rgba(100,116,139,0.15)' }}>
+                  No groups detected in your schedule. Upload your timetable or add group-labelled classes to enable this setting.
+                </div>
+              ) : (
+                /* Group choices — specific groups first, then the 'All Groups' catch-all */
+                <div className="grid grid-cols-4 gap-2">
+                  {availableGroups.map((group) => {
+                    const active = groupDraft.toUpperCase() === group.toUpperCase()
+                    return (
+                      <button
+                        key={group}
+                        type="button"
+                        onClick={() => setGroupDraft(group)}
+                        className="py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all duration-200 active:scale-95"
+                        style={active
+                          ? { background: 'rgba(26,158,160,0.15)', border: '1.5px solid #1a9ea0', color: '#1a9ea0' }
+                          : { background: 'transparent', borderColor: 'rgba(26,158,160,0.20)', color: '#7a93a8' }
+                        }
+                      >
+                        {group}
+                      </button>
+                    )
+                  })}
+                  {/* Explicit 'All Groups' option — spans remaining columns */}
+                  <button
+                    type="button"
+                    onClick={() => setGroupDraft('ALL')}
+                    className="col-span-4 py-2.5 rounded-xl text-xs font-bold border cursor-pointer transition-all duration-200 active:scale-95"
+                    style={groupDraft.toUpperCase() === 'ALL'
+                      ? { background: 'rgba(100,116,139,0.12)', border: '1.5px solid #64748b', color: '#475569' }
+                      : { background: 'transparent', borderColor: 'rgba(100,116,139,0.20)', color: '#94a3b8' }
+                    }
+                  >
+                    All Groups (no filter)
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <button type="button" onClick={() => setEditingGroup(false)}
@@ -883,7 +940,8 @@ export default function ProfilePage() {
                   Cancel
                 </button>
                 <button type="button" onClick={handleSaveGroup}
-                  className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer transition-all duration-200 active:scale-95"
+                  disabled={availableGroups.length === 0}
+                  className="py-3 rounded-xl text-sm font-bold text-white cursor-pointer transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ background: 'linear-gradient(135deg, #1a9ea0, #0d7c80)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}
                 >
                   Save
@@ -1042,6 +1100,51 @@ export default function ProfilePage() {
                   className="flex-1 py-3 rounded-xl font-bold text-white bg-red-600 disabled:opacity-50 cursor-pointer transition-active active:scale-95"
                 >
                   {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Attendance Mode Change Warning Modal */}
+      <AnimatePresence>
+        {showModeWarning && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl max-w-sm w-full p-6 text-center shadow-xl"
+            >
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.12)' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Recalculate attendance?</h3>
+              <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                Changing the counting mode recounts <span className="font-semibold text-slate-700">all</span> of your attendance, both past and future. Your percentages will be recalculated using the new mode. This affects how every recorded class is counted.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowModeWarning(false)}
+                  disabled={savingSettings}
+                  className="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 disabled:opacity-50 cursor-pointer transition-active active:scale-95"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={performSaveSettings}
+                  disabled={savingSettings}
+                  className="flex-1 py-3 rounded-xl font-bold text-white disabled:opacity-50 cursor-pointer transition-active active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, #1a9ea0, #0d7c80)' }}
+                >
+                  {savingSettings ? 'Saving…' : 'Recalculate'}
                 </button>
               </div>
             </motion.div>

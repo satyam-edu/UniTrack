@@ -98,8 +98,12 @@ Column headers show the precise start time of each slot. You must read them as w
 
 RULE 4: PARALLEL BATCH RESOLUTION
 When multiple rows of text appear stacked inside a single grid cell, each row is a SEPARATE class for a SEPARATE batch. Extract EACH row as its own JSON object with the same start_time and end_time.
-Look carefully for explicit batch indicators — they may appear as "(A)", "(B)", "(C)", "G1", "G2", "Batch-II", etc. Extract this into "group_designation".
-CRITICAL: If a cell contains multiple stacked classes with NO explicit batch label, they are still parallel classes for different student groups — assign them "G1", "G2", "G3" in order of appearance (top to bottom). Only use "ALL" when a class appears ALONE in its cell with no other class sharing the same time slot.
+
+STEP 1 — PRINTED LABELS WIN: Look carefully for explicit batch/group labels printed on or beside the class. They appear in many forms, e.g. "(A)", "(B)", "Group A", "Batch 1", "Batch-II", "T1", "B2", "Sec A", "Div 2", "Grp X". If a label IS printed, you MUST use it. Normalise it lightly to its core token (e.g. "Group A" → "A", "Batch 1" → "1", "Sec B" → "B", "T1" → "T1") and put it in "group_designation". Never invent or substitute a different label when one is printed.
+
+STEP 2 — DEFAULT TO LETTERS ONLY WHEN NOTHING IS PRINTED: If a cell has multiple stacked classes with NO printed batch label at all, they are still parallel classes for different student groups. Assign them "A", "B", "C", … in order of appearance (top to bottom). Always use plain capital letters A, B, C — never "G1", "G2", "G3".
+
+Only use "ALL" when a class appears ALONE in its time slot, with no other class sharing the same start_time and end_time.
 
 RULE 5: LAB VS THEORY
 If the subject code contains "(P)", "LAB", or "PRA", or the class spans 2 or more hours, set "category" to "Lab". Otherwise set "category" to "Theory".
@@ -158,7 +162,7 @@ Now carefully re-examine the original image and check for these common mistakes 
 1. STACKED CELLS: If multiple rows inside a single grid cell were collapsed into one entry, split them into separate objects with the same start_time and end_time.
 2. FACULTY NAMES: If any faculty_name is still a short abbreviation code (2-4 capital letters like "PL", "WA"), expand it to the full name using the legend in the image.
 3. TIME SPANS: If a lab class that visually spans multiple hours was split into separate 1-hour slots, merge them into one entry with the correct start and end time. Also verify the start_time against the actual column header — if the timetable has a "Lunch" or "Break" column, that column is NOT a lecture slot; the next column to its right is the actual first afternoon slot (e.g., "1:30 PM", not "2:30 PM").
-4. GROUP DESIGNATIONS: Verify each class has the correct group_designation. If multiple classes share the same time slot — with or without explicit batch labels — they MUST each have a unique designation (A, B, C or G1, G2, G3). Only use "ALL" for a class that is truly alone in its time slot with no parallel entries.
+4. GROUP DESIGNATIONS: Verify each class has the correct group_designation. If explicit batch/group labels are printed on the timetable, they must be used verbatim (lightly normalised to their core token). If multiple classes share the same time slot with NO printed labels, they MUST each get a unique plain capital letter A, B, C (top-to-bottom order) — never "G1", "G2", "G3". Only use "ALL" for a class that is truly alone in its time slot with no parallel entries.
 
 Return the corrected JSON array only. Do not change entries that are already correct.`
 

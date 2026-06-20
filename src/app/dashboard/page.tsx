@@ -6,12 +6,37 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 
+// Duration of a slot in hours. Mirrors the logic on the home page.
+function getHoursDiff(start: string, end: string) {
+  const d1 = new Date(`1970-01-01T${start}`)
+  const d2 = new Date(`1970-01-01T${end}`)
+  let diff = (d2.getTime() - d1.getTime()) / (1000 * 60 * 60)
+  if (diff <= 0) diff = 1
+  return diff
+}
+
+// Show whole numbers cleanly, otherwise round to one decimal.
+function fmtCount(v: number) {
+  return Number.isInteger(v) ? v.toString() : (Math.round(v * 10) / 10).toString()
+}
+
 interface Subject {
   id: string
   subject_name: string
   subject_code: string
   type: string
-  weight_per_class: number
+}
+
+interface TimetableSlot {
+  id: string
+  start_time: string
+  end_time: string
+}
+
+interface AttendanceRecord {
+  subject_id: string
+  timetable_id: string
+  status: string
 }
 
 interface AttendanceStats {
@@ -47,19 +72,22 @@ export default function DashboardPage() {
 
     const userId = session.user.id
 
-    // Fetch user name
+    // Fetch user name + counting modes
     const { data: userData } = await supabase
       .from('users')
-      .select('name')
+      .select('name, theory_mode, lab_mode')
       .eq('id', userId)
       .single()
 
     if (userData) setUserName(userData.name.split(' ')[0])
 
+    const theoryMode: 'class' | 'hour' = userData?.theory_mode === 'hour' ? 'hour' : 'class'
+    const labMode: 'class' | 'hour' = userData?.lab_mode === 'hour' ? 'hour' : 'class'
+
     // Fetch subjects
     const { data: subjects } = await supabase
       .from('subjects')
-      .select('id, subject_name, subject_code, type, weight_per_class')
+      .select('id, subject_name, subject_code, type')
       .eq('user_id', userId)
 
     if (!subjects || subjects.length === 0) {
@@ -67,26 +95,45 @@ export default function DashboardPage() {
       return
     }
 
+    // Fetch timetable slots (for per-hour durations)
+    const { data: timetable } = await supabase
+      .from('timetable')
+      .select('id, start_time, end_time')
+      .eq('user_id', userId)
+
+    const slotById = new Map<string, TimetableSlot>(
+      (timetable || []).map((s: TimetableSlot) => [s.id, s])
+    )
+
     // Fetch all attendance records
     const { data: attendance } = await supabase
       .from('attendance')
-      .select('subject_id, status')
+      .select('subject_id, timetable_id, status')
       .eq('user_id', userId)
+
+    // Point value of a single record, respecting the subject's counting mode.
+    const pointValue = (sub: Subject, rec: AttendanceRecord) => {
+      const mode = sub.type === 'Theory' ? theoryMode : labMode
+      if (mode !== 'hour') return 1
+      const slot = slotById.get(rec.timetable_id)
+      return slot ? getHoursDiff(slot.start_time, slot.end_time) : 1
+    }
 
     // Calculate stats per subject
     const subjectStats: AttendanceStats[] = subjects.map((sub: Subject) => {
       const records = (attendance || []).filter(
-        (a: { subject_id: string; status: string }) => a.subject_id === sub.id
+        (a: AttendanceRecord) => a.subject_id === sub.id
       )
-      const present = records.filter(
-        (r: { status: string }) => r.status === 'Present'
-      ).length
-      const absent = records.filter(
-        (r: { status: string }) => r.status === 'Absent'
-      ).length
-      const cancelled = records.filter(
-        (r: { status: string }) => r.status === 'Cancelled'
-      ).length
+
+      let present = 0
+      let absent = 0
+      let cancelled = 0
+      for (const rec of records) {
+        if (rec.status === 'Present') present += pointValue(sub, rec)
+        else if (rec.status === 'Absent') absent += pointValue(sub, rec)
+        else if (rec.status === 'Cancelled') cancelled += 1
+      }
+
       const total = present + absent // Cancelled classes don't count
       const percentage = total > 0 ? Math.round((present / total) * 100) : 100
 
@@ -95,9 +142,9 @@ export default function DashboardPage() {
         subject_name: sub.subject_name,
         subject_code: sub.subject_code,
         type: sub.type,
-        total: total * sub.weight_per_class,
-        present: present * sub.weight_per_class,
-        absent: absent * sub.weight_per_class,
+        total,
+        present,
+        absent,
         cancelled,
         percentage,
       }
@@ -175,11 +222,11 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-input-bg rounded-xl px-4 py-3 text-center">
-              <p className="text-lg font-bold">{totalPresent}</p>
+              <p className="text-lg font-bold">{fmtCount(totalPresent)}</p>
               <p className="text-xs text-text-muted">Hours Present</p>
             </div>
             <div className="bg-input-bg rounded-xl px-4 py-3 text-center">
-              <p className="text-lg font-bold">{totalClasses}</p>
+              <p className="text-lg font-bold">{fmtCount(totalClasses)}</p>
               <p className="text-xs text-text-muted">Total Hours</p>
             </div>
           </div>
@@ -247,14 +294,14 @@ export default function DashboardPage() {
 
                 <div className="flex items-center gap-4 text-xs text-text-muted">
                   <span>
-                    <span className="text-success font-medium">{subject.present}</span> present
+                    <span className="text-success font-medium">{fmtCount(subject.present)}</span> present
                   </span>
                   <span>
-                    <span className="text-danger font-medium">{subject.absent}</span> absent
+                    <span className="text-danger font-medium">{fmtCount(subject.absent)}</span> absent
                   </span>
                   {subject.cancelled > 0 && (
                     <span>
-                      <span className="text-yellow-400 font-medium">{subject.cancelled}</span> cancelled
+                      <span className="text-yellow-400 font-medium">{fmtCount(subject.cancelled)}</span> cancelled
                     </span>
                   )}
                 </div>

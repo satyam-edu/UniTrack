@@ -13,9 +13,59 @@ import { supabase } from '@/lib/supabase'
 type ToastType = 'success' | 'error'
 interface Toast { message: string; type: ToastType }
 
+type UploadStep = 'upload' | 'review' | 'group' | 'summary'
+
 interface Props { onClose: () => void }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Returns unique non-ALL group designations present in extracted data. */
+function extractGroups(data: ExtractedClass[]): string[] {
+  const set = new Set<string>()
+  for (const cls of data) {
+    const g = (cls.group_designation ?? '').trim().toUpperCase()
+    if (g && g !== 'ALL') set.add(g)
+  }
+  return Array.from(set).sort()
+}
+
+/**
+ * Parse "H:MM AM/PM" strings from the AI into comparable minutes-since-midnight.
+ * Required because the extracted times are 12-hour strings, not HH:MM:SS.
+ */
+function parseTimeMin(t: string): number {
+  const m = t.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!m) return 0
+  let h = parseInt(m[1])
+  const min = parseInt(m[2])
+  const mer = m[3].toUpperCase()
+  if (mer === 'AM') { if (h === 12) h = 0 }
+  else { if (h !== 12) h += 12 }
+  return h * 60 + min
+}
+
+/** True if any two extracted classes share a day and have overlapping time windows. */
+function hasOverlappingExtracted(data: ExtractedClass[]): boolean {
+  const byDay: Record<string, ExtractedClass[]> = {}
+  for (const cls of data) {
+    if (!byDay[cls.day]) byDay[cls.day] = []
+    byDay[cls.day].push(cls)
+  }
+  for (const slots of Object.values(byDay)) {
+    for (let i = 0; i < slots.length; i++) {
+      for (let j = i + 1; j < slots.length; j++) {
+        const aStart = parseTimeMin(slots[i].start_time)
+        const aEnd   = parseTimeMin(slots[i].end_time)
+        const bStart = parseTimeMin(slots[j].start_time)
+        const bEnd   = parseTimeMin(slots[j].end_time)
+        if (aStart < bEnd && bStart < aEnd) return true
+      }
+    }
+  }
+  return false
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -24,27 +74,31 @@ export default function UploadTimetableModal({ onClose }: Props) {
   const overlayRef  = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // ── View state ────────────────────────────────────────────────────────────
+  // ── Step state ────────────────────────────────────────────────────────────
+  const [step, setStep] = useState<UploadStep>('upload')
+
+  // ── File & parse state ────────────────────────────────────────────────────
   const [file, setFile]               = useState<File | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
-  const [isParsing, setIsParsing]     = useState(false)   // Gemini in flight
-  const [isImporting, setIsImporting] = useState(false)   // DB write in flight
+  const [isParsing, setIsParsing]     = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const [previewUrl, setPreviewUrl]   = useState<string | null>(null)
   const [toast, setToast]             = useState<Toast | null>(null)
 
   // ── Review state ──────────────────────────────────────────────────────────
   const [extractedData, setExtractedData] = useState<ExtractedClass[] | null>(null)
   const [editingIndex, setEditingIndex]   = useState<number | null>(null)
+  const [detectedGroups, setDetectedGroups] = useState<string[]>([])
+  const [hasParallelSlots, setHasParallelSlots] = useState(false)
 
   // ── Summary state (shown after import) ───────────────────────────────────
   const [summaryData, setSummaryData] = useState<{
     count: number
     skippedClasses: SkippedClass[]
+    importedGroup: string | null
   } | null>(null)
 
-  const isLoading    = isParsing || isImporting
-  const isSummary    = summaryData !== null
-  const isReviewMode = extractedData !== null && !isSummary
+  const isLoading = isParsing || isImporting
 
   const loadingPhrases = ["Scanning grid lines...", "Identifying subject codes...", "Organizing your week..."]
   const [parsingTextIdx, setParsingTextIdx] = useState(0)
@@ -68,12 +122,13 @@ export default function UploadTimetableModal({ onClose }: Props) {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape' && !isLoading) {
         if (editingIndex !== null) { setEditingIndex(null); return }
+        if (step === 'group') { setStep('review'); return }
         onClose()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, isLoading, editingIndex])
+  }, [onClose, isLoading, editingIndex, step])
 
   useEffect(() => {
     if (file && file.type.startsWith('image/')) {
@@ -128,7 +183,12 @@ export default function UploadTimetableModal({ onClose }: Props) {
 
       const result = await parseTimetableImage(formData)
       if (result.success) {
+        const groups   = extractGroups(result.classes)
+        const parallel = hasOverlappingExtracted(result.classes)
+        setDetectedGroups(groups)
+        setHasParallelSlots(parallel)
         setExtractedData(result.classes)
+        setStep('review')
       } else {
         setToast({ message: result.error, type: 'error' })
       }
@@ -139,9 +199,22 @@ export default function UploadTimetableModal({ onClose }: Props) {
     }
   }
 
-  // ── Action 2: Confirm & import ────────────────────────────────────────────
+  // ── Action 2: Decide whether to show group picker or import directly ───────
 
-  const handleImport = async () => {
+  const handleConfirmReview = () => {
+    if (detectedGroups.length > 0) {
+      setStep('group')
+    } else {
+      // No groups detected — import without setting a group preference. Any truly
+      // unlabeled parallel slots import as Universal; the Home lock + manual edit
+      // flow guide the user to assign real labels afterwards.
+      handleImport(null)
+    }
+  }
+
+  // ── Action 3: Import (with optional group preference) ─────────────────────
+
+  const handleImport = async (group: string | null) => {
     if (!extractedData) return
     setIsImporting(true)
     try {
@@ -150,8 +223,28 @@ export default function UploadTimetableModal({ onClose }: Props) {
 
       const result = await saveTimetableToDB(extractedData, session.access_token)
       if (result.success) {
+        // Persist the user's group choice to DB.
+        // This runs after the timetable import so a failure here doesn't block the import.
+        if (group) {
+          try {
+            await supabase
+              .from('users')
+              .update({ primary_group: group })
+              .eq('id', session.user.id)
+            localStorage.setItem('unitrack_primary_group', group)
+          } catch {
+            // Group save failed — timetable is still imported.
+            // User can set their group from Profile.
+          }
+        }
+
         router.refresh()
-        setSummaryData({ count: result.count, skippedClasses: result.skippedClasses })
+        setSummaryData({
+          count: result.count,
+          skippedClasses: result.skippedClasses,
+          importedGroup: group,
+        })
+        setStep('summary')
       } else {
         setToast({ message: result.error, type: 'error' })
       }
@@ -162,22 +255,41 @@ export default function UploadTimetableModal({ onClose }: Props) {
     }
   }
 
-  // ── Inline edit helpers ───────────────────────────────────────────────────
+  // ── Inline edit helpers (review step) ────────────────────────────────────
 
   const updateClass = (index: number, field: keyof ExtractedClass, value: string | null) => {
-    setExtractedData(prev =>
-      prev ? prev.map((c, i) => i === index ? { ...c, [field]: value } : c) : prev
-    )
+    setExtractedData(prev => {
+      if (!prev) return prev
+      const next = prev.map((c, i) => i === index ? { ...c, [field]: value } : c)
+      // Recompute detected groups whenever a group_designation cell is edited
+      if (field === 'group_designation') setDetectedGroups(extractGroups(next))
+      return next
+    })
   }
 
   const removeClass = (index: number) => {
     setExtractedData(prev => {
       if (!prev) return prev
       const next = prev.filter((_, i) => i !== index)
+      setDetectedGroups(extractGroups(next))
       return next.length === 0 ? null : next
     })
     if (editingIndex === index) setEditingIndex(null)
   }
+
+  // ── Header labels ─────────────────────────────────────────────────────────
+
+  const headerTitle =
+    step === 'summary' ? 'Import Summary' :
+    step === 'group'   ? 'Which group are you in?' :
+    step === 'review'  ? 'Review Extracted Schedule' :
+    'Upload Timetable'
+
+  const headerSubtitle =
+    step === 'summary' ? `${summaryData!.count} imported · ${summaryData!.skippedClasses.length} skipped` :
+    step === 'group'   ? 'We detected parallel classes at the same time. Pick yours so your Home screen shows only your classes.' :
+    step === 'review'  ? `${extractedData!.length} class${extractedData!.length !== 1 ? 'es' : ''} detected · Edit before importing` :
+    'AI-powered extraction · V2.0'
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -199,25 +311,26 @@ export default function UploadTimetableModal({ onClose }: Props) {
           {/* ── Header ────────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-slate-100 flex-shrink-0">
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-slate-900">
-                {isSummary ? 'Import Summary' : isReviewMode ? 'Review Extracted Schedule' : 'Upload Timetable'}
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {isSummary
-                  ? `${summaryData!.count} imported · ${summaryData!.skippedClasses.length} skipped`
-                  : isReviewMode
-                  ? `${extractedData!.length} class${extractedData!.length !== 1 ? 'es' : ''} detected · Edit before importing`
-                  : 'AI-powered extraction · V2.0'}
-              </p>
+              <h2 className="text-lg font-bold tracking-tight text-slate-900">{headerTitle}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">{headerSubtitle}</p>
             </div>
             <div className="flex items-center gap-2">
-              {isReviewMode && !isImporting && !isSummary && (
+              {step === 'review' && !isImporting && (
                 <button
-                  onClick={() => { setExtractedData(null); setEditingIndex(null) }}
+                  onClick={() => { setExtractedData(null); setDetectedGroups([]); setEditingIndex(null); setStep('upload') }}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
                   style={{ background: 'rgba(26,158,160,0.08)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
                 >
                   ← Re-upload
+                </button>
+              )}
+              {step === 'group' && !isImporting && (
+                <button
+                  onClick={() => setStep('review')}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                  style={{ background: 'rgba(26,158,160,0.08)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
+                >
+                  ← Back
                 </button>
               )}
               <button
@@ -235,8 +348,9 @@ export default function UploadTimetableModal({ onClose }: Props) {
 
           {/* ── Body ──────────────────────────────────────────────────────── */}
           <AnimatePresence mode="wait" initial={false}>
-            {isSummary ? (
-              /* ── Summary View ────────────────────────────────────────── */
+
+            {/* ── Summary ────────────────────────────────────────────────── */}
+            {step === 'summary' && (
               <motion.div
                 key="summary"
                 initial={{ opacity: 0 }}
@@ -245,7 +359,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 transition={{ duration: 0.15 }}
                 className="px-5 pb-5 pt-4 flex flex-col gap-4"
               >
-                {/* Success banner */}
                 <div className="flex flex-col items-center py-6 gap-3 text-center">
                   <div
                     className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -260,10 +373,22 @@ export default function UploadTimetableModal({ onClose }: Props) {
                     <p className="text-sm text-slate-500 mt-0.5">
                       {summaryData!.count} class{summaryData!.count !== 1 ? 'es' : ''} added to your schedule
                     </p>
+                    {summaryData!.importedGroup && (
+                      <span
+                        className="inline-block mt-2 text-xs font-bold px-3 py-1 rounded-full text-white"
+                        style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)' }}
+                      >
+                        Group {summaryData!.importedGroup} saved
+                      </span>
+                    )}
+                    {!summaryData!.importedGroup && (detectedGroups.length > 0 || hasParallelSlots) && (
+                      <p className="text-xs text-amber-600 mt-2 font-medium">
+                        Set your group in Profile → Group when ready.
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {/* Skipped list — only shown if something was skipped */}
                 {summaryData!.skippedClasses.length > 0 && (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 overflow-hidden">
                     <div className="px-4 py-2.5 border-b border-amber-200 flex items-center gap-2">
@@ -286,7 +411,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                   </div>
                 )}
 
-                {/* CTA */}
                 <button
                   onClick={onClose}
                   className="w-full py-3.5 rounded-2xl font-bold text-sm text-white cursor-pointer"
@@ -295,8 +419,74 @@ export default function UploadTimetableModal({ onClose }: Props) {
                   View My Schedule →
                 </button>
               </motion.div>
-            ) : !isReviewMode ? (
-              /* ── Upload View ─────────────────────────────────────────── */
+            )}
+
+            {/* ── Group Picker ───────────────────────────────────────────── */}
+            {step === 'group' && (
+              <motion.div
+                key="group"
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -24 }}
+                transition={{ duration: 0.18 }}
+                className="px-5 pb-5 pt-4 flex flex-col gap-4 overflow-y-auto"
+                style={{ maxHeight: '72vh' }}
+              >
+                <div className="flex flex-col gap-2.5">
+                  {detectedGroups.map((group) => (
+                    <motion.button
+                      key={group}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => handleImport(group)}
+                      disabled={isImporting}
+                      className="w-full py-4 rounded-2xl flex items-center justify-center border-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ borderColor: 'rgba(26,158,160,0.30)', background: 'rgba(26,158,160,0.04)' }}
+                      onMouseEnter={(e) => {
+                        if (!isImporting) {
+                          e.currentTarget.style.borderColor = 'rgba(26,158,160,0.65)'
+                          e.currentTarget.style.background  = 'rgba(26,158,160,0.08)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'rgba(26,158,160,0.30)'
+                        e.currentTarget.style.background  = 'rgba(26,158,160,0.04)'
+                      }}
+                    >
+                      <span className="text-base font-bold tracking-tight" style={{ color: '#0d7c80' }}>
+                        Group {group}
+                      </span>
+                    </motion.button>
+                  ))}
+                </div>
+
+                {/* Importing spinner overlay */}
+                {isImporting && (
+                  <div className="flex items-center justify-center gap-2.5 py-2 text-sm text-slate-500">
+                    <svg className="animate-spin h-4 w-4 text-teal-500" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Importing your schedule…
+                  </div>
+                )}
+
+                {/* Skip */}
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => handleImport(null)}
+                  disabled={isImporting}
+                  className="w-full py-3 rounded-2xl text-sm font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  I don&apos;t know yet — Skip
+                </motion.button>
+                <p className="text-center text-[11px] text-slate-400 -mt-2">
+                  You can set your group anytime from Profile → Group
+                </p>
+              </motion.div>
+            )}
+
+            {/* ── Upload ─────────────────────────────────────────────────── */}
+            {step === 'upload' && (
               <motion.div
                 key="upload"
                 initial={{ opacity: 0 }}
@@ -326,85 +516,86 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 ) : (
                   <>
                     {/* Drop zone */}
-                <div
-                  onClick={() => !isLoading && fileInputRef.current?.click()}
-                  onDrop={handleDrop}
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false) }}
-                  className={`cursor-pointer border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
-                    isLoading
-                      ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50'
-                      : isDragging
-                      ? 'border-teal-500 bg-teal-50'
-                      : 'border-teal-400/50 bg-teal-50/50 hover:bg-teal-50 hover:border-teal-500'
-                  }`}
-                >
-                  <input
-                    type="file"
-                    accept="image/png, image/jpeg, application/pdf"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    className="hidden"
-                    disabled={isLoading}
-                  />
+                    <div
+                      onClick={() => !isLoading && fileInputRef.current?.click()}
+                      onDrop={handleDrop}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                      onDragLeave={(e) => { e.preventDefault(); setIsDragging(false) }}
+                      className={`cursor-pointer border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
+                        isLoading
+                          ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50'
+                          : isDragging
+                          ? 'border-teal-500 bg-teal-50'
+                          : 'border-teal-400/50 bg-teal-50/50 hover:bg-teal-50 hover:border-teal-500'
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept="image/png, image/jpeg, application/pdf"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        className="hidden"
+                        disabled={isLoading}
+                      />
 
-                  {file ? (
-                    <div className="relative flex flex-col items-center">
-                      {previewUrl ? (
-                        <img src={previewUrl} alt="Preview" className="w-20 h-20 object-cover rounded-xl shadow-sm border border-slate-200 mb-2.5" />
+                      {file ? (
+                        <div className="relative flex flex-col items-center">
+                          {previewUrl ? (
+                            <img src={previewUrl} alt="Preview" className="w-20 h-20 object-cover rounded-xl shadow-sm border border-slate-200 mb-2.5" />
+                          ) : (
+                            <div className="w-20 h-20 flex items-center justify-center bg-slate-100 rounded-xl border border-slate-200 mb-2.5">
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                              </svg>
+                            </div>
+                          )}
+                          <p className="text-sm font-semibold text-slate-700 truncate max-w-[200px]">{file.name}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">{(file.size / 1024).toFixed(0)} KB · {file.type.split('/')[1].toUpperCase()}</p>
+                          {!isLoading && (
+                            <button onClick={clearFile} aria-label="Remove file"
+                              className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition-colors shadow-sm">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                            </button>
+                          )}
+                        </div>
                       ) : (
-                        <div className="w-20 h-20 flex items-center justify-center bg-slate-100 rounded-xl border border-slate-200 mb-2.5">
-                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
+                        <div className="flex flex-col items-center pointer-events-none">
+                          <svg className="w-9 h-9 mb-2.5" style={{ color: '#1a9ea0' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                           </svg>
+                          <p className="text-sm text-slate-600 font-medium">Drag & drop or click to browse</p>
+                          <p className="text-xs text-slate-400 mt-1">PNG · JPEG · PDF</p>
                         </div>
                       )}
-                      <p className="text-sm font-semibold text-slate-700 truncate max-w-[200px]">{file.name}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{(file.size / 1024).toFixed(0)} KB · {file.type.split('/')[1].toUpperCase()}</p>
-                      {!isLoading && (
-                        <button onClick={clearFile} aria-label="Remove file"
-                          className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition-colors shadow-sm">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                        </button>
-                      )}
                     </div>
-                  ) : (
-                    <div className="flex flex-col items-center pointer-events-none">
-                      <svg className="w-9 h-9 mb-2.5" style={{ color: '#1a9ea0' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                      </svg>
-                      <p className="text-sm text-slate-600 font-medium">Drag & drop or click to browse</p>
-                      <p className="text-xs text-slate-400 mt-1">PNG · JPEG · PDF</p>
+
+                    {/* ⚠️ Overwrite warning */}
+                    <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-2xl bg-amber-50 border border-amber-200/70">
+                      <span className="text-amber-500 text-base leading-none mt-0.5 flex-shrink-0">⚠️</span>
+                      <p className="text-xs text-amber-700 font-medium leading-snug">
+                        <strong>Importing will overwrite your entire existing schedule.</strong> All current subjects and timetable slots will be permanently replaced.
+                      </p>
                     </div>
-                  )}
-                </div>
 
-                {/* ⚠️ Overwrite warning */}
-                <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-2xl bg-amber-50 border border-amber-200/70">
-                  <span className="text-amber-500 text-base leading-none mt-0.5 flex-shrink-0">⚠️</span>
-                  <p className="text-xs text-amber-700 font-medium leading-snug">
-                    <strong>Importing will overwrite your entire existing schedule.</strong> All current subjects and timetable slots will be permanently replaced.
-                  </p>
-                </div>
-
-                {/* CTA buttons */}
-                <div className="grid grid-cols-2 gap-3">
-                  <button onClick={onClose} disabled={isLoading}
-                    className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
-                    Cancel
-                  </button>
-                    <button onClick={handleParse} disabled={!file || isLoading}
-                      className="py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
-                      style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}>
-                      Extract Schedule
-                    </button>
-                  </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button onClick={onClose} disabled={isLoading}
+                        className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                        Cancel
+                      </button>
+                      <button onClick={handleParse} disabled={!file || isLoading}
+                        className="py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+                        style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 12px rgba(26,158,160,0.30)' }}>
+                        Extract Schedule
+                      </button>
+                    </div>
                   </>
                 )}
               </motion.div>
-            ) : (
-              /* ── Review View ─────────────────────────────────────────── */
+            )}
+
+            {/* ── Review ─────────────────────────────────────────────────── */}
+            {step === 'review' && (
               <motion.div
                 key="review"
                 initial={{ opacity: 0 }}
@@ -413,6 +604,18 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 transition={{ duration: 0.15 }}
                 className="flex flex-col min-h-0 flex-1"
               >
+                {/* Parallel-but-unlabeled info banner */}
+                {hasParallelSlots && detectedGroups.length === 0 && (
+                  <div className="mx-4 mt-3 flex items-start gap-2.5 px-3.5 py-3 rounded-2xl bg-blue-50 border border-blue-200/70">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <p className="text-xs text-blue-700 font-medium leading-snug">
+                      Overlapping classes detected but not labelled by group. They&apos;ll import as Universal — assign their groups by tapping the pencil icon in <strong>Timetable</strong>, then pick yours in <strong>Profile → Group</strong>.
+                    </p>
+                  </div>
+                )}
+
                 {/* Scrollable list */}
                 <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2" style={{ maxHeight: '52vh' }}>
                   {extractedData!.map((cls, i) => (
@@ -421,9 +624,8 @@ export default function UploadTimetableModal({ onClose }: Props) {
                       style={{ boxShadow: editingIndex === i ? '0 0 0 2px #1a9ea0' : undefined }}
                     >
                       {editingIndex === i ? (
-                        /* ── Expanded edit form ───────────────────────── */
+                        /* ── Expanded edit form ──────────────────────── */
                         <div className="p-3 space-y-2.5">
-                          {/* Subject name */}
                           <div>
                             <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Subject Name</label>
                             <input
@@ -432,7 +634,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
                             />
                           </div>
-                          {/* Code + Category row */}
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Code</label>
@@ -455,7 +656,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               </select>
                             </div>
                           </div>
-                          {/* Day + Times row */}
                           <div className="grid grid-cols-3 gap-2">
                             <div>
                               <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Day</label>
@@ -486,7 +686,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               />
                             </div>
                           </div>
-                          {/* Faculty + Group row */}
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Faculty</label>
@@ -507,7 +706,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               />
                             </div>
                           </div>
-                          {/* Actions */}
                           <div className="flex gap-2 pt-1">
                             <button onClick={() => removeClass(i)}
                               className="flex-1 py-2 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-100 cursor-pointer transition-colors">
@@ -521,14 +719,12 @@ export default function UploadTimetableModal({ onClose }: Props) {
                           </div>
                         </div>
                       ) : (
-                        /* ── Compact row ─────────────────────────────── */
+                        /* ── Compact row ───────────────────────────── */
                         <div className="flex items-center gap-3 px-3.5 py-3">
-                          {/* Day pill */}
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-white"
                             style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)' }}>
                             {cls.day.slice(0, 3).toUpperCase()}
                           </div>
-                          {/* Info */}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-slate-800 truncate leading-tight">{cls.subject_name}</p>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -553,7 +749,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               )}
                             </div>
                           </div>
-                          {/* Edit button */}
                           <button
                             onClick={() => setEditingIndex(i)}
                             aria-label="Edit"
@@ -564,7 +759,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                             </svg>
                           </button>
-                          {/* Delete button */}
                           <button
                             onClick={() => removeClass(i)}
                             aria-label="Delete class"
@@ -586,7 +780,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 {/* Confirm footer */}
                 <div className="px-4 pb-5 pt-3 border-t border-slate-100 flex-shrink-0 space-y-2">
                   <button
-                    onClick={handleImport}
+                    onClick={handleConfirmReview}
                     disabled={isImporting || !extractedData?.length}
                     className="w-full py-3.5 rounded-2xl font-bold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 16px rgba(26,158,160,0.30)' }}
@@ -599,14 +793,21 @@ export default function UploadTimetableModal({ onClose }: Props) {
                         </svg>
                         Importing…
                       </span>
-                    ) : `Confirm & Import ${extractedData!.length} Class${extractedData!.length !== 1 ? 'es' : ''}`}
+                    ) : detectedGroups.length > 0
+                      ? `Confirm & Pick Group →`
+                      : `Confirm & Import ${extractedData!.length} Class${extractedData!.length !== 1 ? 'es' : ''}`
+                    }
                   </button>
                   <p className="text-center text-[11px] text-slate-400">
-                    Collisions are skipped automatically · You can still edit your schedule afterwards
+                    {detectedGroups.length > 0
+                      ? `${detectedGroups.length} groups detected — you'll pick yours next`
+                      : 'Collisions are skipped automatically · You can still edit your schedule afterwards'
+                    }
                   </p>
                 </div>
               </motion.div>
             )}
+
           </AnimatePresence>
         </motion.div>
       </div>

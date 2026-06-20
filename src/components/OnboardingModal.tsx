@@ -65,7 +65,7 @@ export default function OnboardingModal({ userId, onComplete }: OnboardingModalP
               <polyline points="12 6 12 12 16 14" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold tracking-tight">Welcome to UniTrack! 🎉</h2>
+          <h2 className="text-xl font-bold tracking-tight">Welcome to UniTrack!</h2>
           <p className="text-text-muted text-sm mt-1.5">
             Let&apos;s set up your attendance preferences before you begin.
           </p>
@@ -108,22 +108,20 @@ export default function OnboardingModal({ userId, onComplete }: OnboardingModalP
               <button
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, theory_mode: 'class' }))}
-                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
-                  form.theory_mode === 'class'
+                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${form.theory_mode === 'class'
                     ? 'bg-accent/15 border-accent text-accent'
                     : 'bg-input-bg border-input-border text-text-muted hover:border-text-muted'
-                }`}
+                  }`}
               >
                 Per Class
               </button>
               <button
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, theory_mode: 'hour' }))}
-                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
-                  form.theory_mode === 'hour'
+                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${form.theory_mode === 'hour'
                     ? 'bg-accent/15 border-accent text-accent'
                     : 'bg-input-bg border-input-border text-text-muted hover:border-text-muted'
-                }`}
+                  }`}
               >
                 Per Hour
               </button>
@@ -142,22 +140,20 @@ export default function OnboardingModal({ userId, onComplete }: OnboardingModalP
               <button
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, lab_mode: 'class' }))}
-                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
-                  form.lab_mode === 'class'
+                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${form.lab_mode === 'class'
                     ? 'bg-accent/15 border-accent text-accent'
                     : 'bg-input-bg border-input-border text-text-muted hover:border-text-muted'
-                }`}
+                  }`}
               >
                 Per Class
               </button>
               <button
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, lab_mode: 'hour' }))}
-                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
-                  form.lab_mode === 'hour'
+                className={`py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${form.lab_mode === 'hour'
                     ? 'bg-accent/15 border-accent text-accent'
                     : 'bg-input-bg border-input-border text-text-muted hover:border-text-muted'
-                }`}
+                  }`}
               >
                 Per Hour
               </button>

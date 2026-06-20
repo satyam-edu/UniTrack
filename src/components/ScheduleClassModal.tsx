@@ -106,58 +106,29 @@ export default function ScheduleClassModal({ onClose, onSuccess, activeDay }: Pr
       const newEnd   = `${form.end_time}:00`
       const newGroup = form.group_designation.trim().toUpperCase() || 'ALL'
 
-      // Fetch existing slots for this day — need id for potential group upgrades
-      const { data: existingSlots, error: fetchError } = await supabase
-        .from('timetable')
-        .select('id, start_time, end_time, group_designation')
-        .eq('user_id', session.user.id)
-        .eq('day_of_week', activeDay)
+      // We NEVER auto-assign G1/G2 or rewrite existing slots. A class added without a
+      // group stays Universal (ALL); parallel classes coexist until the user assigns
+      // real labels via edit. The only hard block is a true same-group double-book —
+      // the same specific group can't be in two places at once. Universal classes may
+      // overlap anything; the Home page locks attendance on unresolved overlaps.
+      if (newGroup !== 'ALL') {
+        const { data: existingSlots, error: fetchError } = await supabase
+          .from('timetable')
+          .select('start_time, end_time, group_designation')
+          .eq('user_id', session.user.id)
+          .eq('day_of_week', activeDay)
 
-      if (fetchError) throw fetchError
+        if (fetchError) throw fetchError
 
-      // Find all slots that overlap in time with the new class
-      const overlapping = (existingSlots ?? []).filter((slot) => {
-        const slotGroup = (slot.group_designation ?? 'ALL').toUpperCase()
-        if (newGroup !== 'ALL' && slotGroup !== 'ALL' && newGroup !== slotGroup) return false
-        return newStart < slot.end_time && newEnd > slot.start_time
-      })
+        const sameGroupClash = (existingSlots ?? []).some((slot) => {
+          if ((slot.group_designation ?? 'ALL').toUpperCase() !== newGroup) return false
+          return newStart < slot.end_time && newEnd > slot.start_time
+        })
 
-      let finalGroup = newGroup
-
-      if (overlapping.length > 0) {
-        if (newGroup !== 'ALL') {
-          // User specified a group — only block if that exact group already has a class here
-          const exactConflict = overlapping.some(
-            (s) => (s.group_designation ?? 'ALL').toUpperCase() === newGroup
-          )
-          if (exactConflict) {
-            setError(`Group ${newGroup} already has a class at this time on ${activeDay}.`)
-            setLoading(false)
-            return
-          }
-          // Different named group — allow it through
-        } else {
-          // No group specified — auto-assign the next available group number
-          const gNums = overlapping
-            .map((s) => (s.group_designation ?? 'ALL').toUpperCase())
-            .filter((g) => /^G\d+$/.test(g))
-            .map((g) => parseInt(g.slice(1)))
-          const maxNum = gNums.length > 0 ? Math.max(...gNums) : 0
-
-          // Upgrade any 'ALL' overlapping slots to 'G1' so they stay group-specific
-          const allSlots = overlapping.filter(
-            (s) => (s.group_designation ?? 'ALL').toUpperCase() === 'ALL'
-          )
-          if (allSlots.length > 0) {
-            const { error: upgradeErr } = await supabase
-              .from('timetable')
-              .update({ group_designation: 'G1' })
-              .in('id', allSlots.map((s) => s.id))
-            if (upgradeErr) throw upgradeErr
-            finalGroup = 'G2'
-          } else {
-            finalGroup = `G${maxNum + 1}`
-          }
+        if (sameGroupClash) {
+          setError(`Group ${newGroup} already has a class at this time on ${activeDay}.`)
+          setLoading(false)
+          return
         }
       }
 
@@ -168,7 +139,7 @@ export default function ScheduleClassModal({ onClose, onSuccess, activeDay }: Pr
         start_time: newStart,
         end_time: newEnd,
         room_location: form.room_location ? form.room_location.trim() : null,
-        group_designation: finalGroup,
+        group_designation: newGroup,
       })
 
       if (insertError) throw insertError
@@ -318,7 +289,7 @@ export default function ScheduleClassModal({ onClose, onSuccess, activeDay }: Pr
                     id="modal-group_designation"
                     name="group_designation"
                     type="text"
-                    placeholder="e.g. G2, A, B"
+                    placeholder="e.g. A, B, C"
                     value={form.group_designation}
                     onChange={handleChange}
                     className="w-full bg-white/50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"

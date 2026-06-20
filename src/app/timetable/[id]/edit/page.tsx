@@ -265,7 +265,7 @@ export default function EditTimetablePage() {
               id="group_designation"
               name="group_designation"
               type="text"
-              placeholder="e.g. G1, A, B"
+              placeholder="e.g. A, B, C"
               value={form.group_designation}
               onChange={handleChange}
               className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"

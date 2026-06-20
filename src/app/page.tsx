@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import BottomNav from '@/components/BottomNav'
 import ProgressRing from '@/components/ProgressRing'
-import GroupOnboardingModal from '@/components/GroupOnboardingModal'
 import {
   format,
   startOfWeek,
@@ -27,6 +28,7 @@ interface UserProfile {
   target_attendance: number
   theory_mode: 'class' | 'hour'
   lab_mode: 'class' | 'hour'
+  primary_group: string | null
 }
 
 interface TimetableSlot {
@@ -107,6 +109,7 @@ const calendarVariants = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
+  const router = useRouter()
   const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -137,11 +140,21 @@ export default function HomePage() {
 
     const { data: userData } = await supabase
       .from('users')
-      .select('id, name, target_attendance, theory_mode, lab_mode')
+      .select('id, name, target_attendance, theory_mode, lab_mode, primary_group')
       .eq('id', userId)
       .single()
 
-    if (userData) setUser(userData)
+    if (userData) {
+      setUser(userData)
+      // DB is authoritative; sync to localStorage as cache
+      const dbGroup = userData.primary_group ?? null
+      setPrimaryGroup(dbGroup)
+      if (dbGroup) {
+        localStorage.setItem('unitrack_primary_group', dbGroup)
+      } else {
+        localStorage.removeItem('unitrack_primary_group')
+      }
+    }
 
     const { data: timetableData } = await supabase
       .from('timetable')
@@ -269,23 +282,43 @@ export default function HomePage() {
     [currentWeekStart]
   )
 
-  // ── Primary group persistence (set via onboarding; source of truth is Profile) ──
-  function handleSelectPrimary(group: string) {
-    setPrimaryGroup(group)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('unitrack_primary_group', group)
-    }
-  }
+  // True when ANY timetable slot has a batch-specific group label (not 'ALL')
+  const hasGroupSpecificSlots = useMemo(() =>
+    allTimetable.some((s) => {
+      const g = s.group_designation?.trim().toUpperCase()
+      return !!g && g !== 'ALL'
+    }),
+    [allTimetable]
+  )
 
-  // Unique batch/groups detected in the schedule (excludes 'ALL') — for onboarding
-  const batchGroups = useMemo(() => {
-    const set = new Set<string>()
-    allTimetable.forEach((slot) => {
-      const g = slot.group_designation?.trim().toUpperCase()
-      if (g && g !== 'ALL') set.add(g)
-    })
-    return Array.from(set).sort()
-  }, [allTimetable])
+  // IDs of the *currently displayed* slots that overlap another displayed slot in time.
+  // Computed on the already group-filtered slotsToday so it naturally covers every case:
+  //   • primaryGroup null  → all parallels shown → overlaps detected
+  //   • primaryGroup 'ALL' → everyone's classes shown → overlaps detected
+  //   • primaryGroup 'A'   → A + ALL shown → only fires on a residual (unsplit) overlap
+  // A fully split schedule leaves no overlap for a specific group, so nothing locks.
+  const overlappingSlotIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (let i = 0; i < slotsToday.length; i++) {
+      for (let j = i + 1; j < slotsToday.length; j++) {
+        const a = slotsToday[i], b = slotsToday[j]
+        // DB times are HH:MM:SS — lexicographic comparison is valid
+        if (a.start_time < b.end_time && b.start_time < a.end_time) {
+          ids.add(a.id); ids.add(b.id)
+        }
+      }
+    }
+    return ids
+  }, [slotsToday])
+
+  // Overlapping slots are visible → marking attendance would double-count → lock them
+  const hasAmbiguousSlots = overlappingSlotIds.size > 0
+  // When a specific group is already set but an overlap remains, the cause is an
+  // unsplit parallel class in the timetable (not a missing group preference).
+  const ambiguityFromResidualSplit = hasAmbiguousSlots && !!primaryGroup && primaryGroup.toUpperCase() !== 'ALL'
+  // Soft: batch-specific slots exist somewhere but no group set → show info nudge
+  const showGroupHint = primaryGroup === null && hasGroupSpecificSlots && !hasAmbiguousSlots
+
 
 
   // ─── Loading skeleton ──────────────────────────────────────────────────────
@@ -309,16 +342,6 @@ export default function HomePage() {
   const attendancePercentage = globalTotal > 0 ? (globalAttended / globalTotal) * 100 : 0
   const target = user?.target_attendance || 75
   const isHealthy = attendancePercentage >= target
-
-  // Mandatory first-time selection when no primary group is set yet
-  if (primaryGroup === null && batchGroups.length > 0) {
-    return (
-      <ProtectedRoute>
-        <GroupOnboardingModal groups={batchGroups} onSelect={handleSelectPrimary} />
-        <BottomNav />
-      </ProtectedRoute>
-    )
-  }
 
   return (
     <ProtectedRoute>
@@ -530,9 +553,11 @@ export default function HomePage() {
               {format(selectedDate, 'EEEE')}&apos;s Classes
             </h2>
             <div className="flex items-center gap-2">
-              {primaryGroup && (
+              {primaryGroup ? (
+                /* Tapping the chip navigates to Profile to change group */
                 <span
-                  className="text-xs font-bold pl-2 pr-2.5 py-1 rounded-full text-white flex items-center gap-1"
+                  onClick={(e) => { e.stopPropagation(); router.push('/profile') }}
+                  className="text-xs font-bold pl-2 pr-2.5 py-1 rounded-full text-white flex items-center gap-1 cursor-pointer active:opacity-80"
                   style={{
                     background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
                     boxShadow: '0 2px 8px rgba(26,158,160,0.30)',
@@ -547,7 +572,16 @@ export default function HomePage() {
                   </svg>
                   {primaryGroup.toUpperCase() === 'ALL' ? 'All Groups' : `Group ${primaryGroup}`}
                 </span>
-              )}
+              ) : hasGroupSpecificSlots ? (
+                /* No group set but batch groups exist — nudge the user */
+                <span
+                  onClick={(e) => { e.stopPropagation(); router.push('/profile') }}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-full cursor-pointer active:opacity-80"
+                  style={{ background: 'rgba(245,158,11,0.10)', color: '#d97706', border: '1px solid rgba(245,158,11,0.30)' }}
+                >
+                  Set Group
+                </span>
+              ) : null}
               <span
                 className="text-xs font-semibold px-2.5 py-1 rounded-full"
                 style={{
@@ -568,6 +602,48 @@ export default function HomePage() {
               </motion.div>
             </div>
           </button>
+
+          {/* ── Hard warning: overlapping slots shown — attendance locked ── */}
+          {hasAmbiguousSlots && (
+            <Link href={ambiguityFromResidualSplit ? '/timetable' : '/profile'}>
+              <div
+                className="mb-4 flex items-start gap-2.5 px-3.5 py-3 rounded-2xl cursor-pointer active:opacity-80"
+                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <div>
+                  <p className="text-xs font-bold text-red-700 leading-snug">Overlapping classes detected</p>
+                  <p className="text-xs text-red-600 mt-0.5 leading-snug">
+                    {ambiguityFromResidualSplit
+                      ? 'Some parallel classes still aren’t split by group. Assign them in Timetable to unlock attendance →'
+                      : 'Set your group in Profile to unlock attendance marking →'}
+                  </p>
+                </div>
+              </div>
+            </Link>
+          )}
+
+          {/* ── Soft hint: batch groups exist but no group chosen yet ── */}
+          {showGroupHint && (
+            <Link href="/profile">
+              <div
+                className="mb-4 flex items-start gap-2.5 px-3.5 py-3 rounded-2xl cursor-pointer active:opacity-80"
+                style={{ background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.20)' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <div>
+                  <p className="text-xs font-bold text-blue-700 leading-snug">Your timetable has batch groups</p>
+                  <p className="text-xs text-blue-600 mt-0.5 leading-snug">
+                    Tap to set your group and see only your classes →
+                  </p>
+                </div>
+              </div>
+            </Link>
+          )}
 
           <AnimatePresence mode="wait">
             {slotsToday.length === 0 ? (
@@ -613,6 +689,9 @@ export default function HomePage() {
                   {slotsToday.map((slot, i) => {
                     const status = slot.attendanceRecord?.status
                     const isFutureDate = isFuture(selectedDate)
+                    // True when this slot overlaps another on the same day and no group is set —
+                    // marking attendance here would corrupt the percentage (double-counting risk).
+                    const isAmbiguous = hasAmbiguousSlots && overlappingSlotIds.has(slot.id)
 
                     /* ── Card tints per-status ── */
                     const cardBorder =
@@ -716,7 +795,7 @@ export default function HomePage() {
                         {/* Action row */}
                         <div
                           className={`mx-3 mb-3 rounded-2xl p-1 grid grid-cols-3 gap-1 ${isFutureDate ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
-                          style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
+                          style={{ background: '#f8fafc', border: `1px solid ${isAmbiguous ? 'rgba(239,68,68,0.25)' : '#e2e8f0'}` }}
                         >
                           {(
                             [
@@ -726,19 +805,26 @@ export default function HomePage() {
                             ] as const
                           ).map(({ label, value, activeColor, activeShadow }) => {
                             const isActive = status === value
+                            // Present/Absent are locked for ambiguous (overlapping, no-group) slots
+                            // to prevent attendance percentage corruption.
+                            // Cancelled is always allowed — it doesn't count toward the percentage.
+                            const isLocked = isAmbiguous && value !== 'Cancelled'
                             return (
                               <button
                                 key={value}
                                 onClick={() => handleMarkAttendance(slot, value)}
-                                disabled={isFutureDate}
-                                className="py-2.5 rounded-xl text-xs font-bold transition-all duration-200 active:scale-95 cursor-pointer"
+                                disabled={isFutureDate || isLocked}
+                                title={isLocked ? 'Set your group in Profile to mark attendance' : undefined}
+                                className="py-2.5 rounded-xl text-xs font-bold transition-all duration-200 active:scale-95 cursor-pointer disabled:cursor-not-allowed"
                                 style={
-                                  isActive
+                                  isLocked
+                                    ? { background: 'transparent', color: 'rgba(239,68,68,0.35)' }
+                                    : isActive
                                     ? { background: activeColor, color: 'white', boxShadow: `0 2px 10px ${activeShadow}` }
                                     : { background: 'transparent', color: '#94a3b8' }
                                 }
                               >
-                                {label}
+                                {isLocked ? '🔒' : label}
                               </button>
                             )
                           })}
