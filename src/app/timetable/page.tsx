@@ -666,20 +666,12 @@ export default function TimetablePage() {
               exit={{ opacity: 0, y: 32, scale: 0.97 }}
               transition={{ type: 'spring', damping: 28, stiffness: 320 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg bg-white rounded-3xl overflow-hidden"
+              className="w-full max-w-lg bg-white rounded-3xl overflow-hidden flex flex-col max-h-[85dvh]"
               style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold"
-                    style={{ background: 'rgba(26,158,160,0.12)', color: '#0d7c80' }}
-                  >
-                    ?
-                  </div>
-                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">Timetable Tips</h2>
-                </div>
+              <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 flex-shrink-0">
+                <h2 className="text-lg font-bold text-slate-900 tracking-tight">Timetable Tips</h2>
                 <button
                   onClick={() => setIsHelpOpen(false)}
                   className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -691,7 +683,7 @@ export default function TimetablePage() {
               </div>
 
               {/* Tips list */}
-              <div className="px-6 py-5 space-y-4">
+              <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
                 {[
                   {
                     icon: (
@@ -776,7 +768,7 @@ export default function TimetablePage() {
               </div>
 
               {/* Footer */}
-              <div className="px-6 pb-6">
+              <div className="px-6 pb-6 pt-2 flex-shrink-0">
                 <button
                   onClick={() => setIsHelpOpen(false)}
                   className="w-full py-3 rounded-2xl text-sm font-bold text-white cursor-pointer"

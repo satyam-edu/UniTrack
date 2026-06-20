@@ -138,13 +138,13 @@ function GridSubjectModal({
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-slate-100">
+        <div className="flex items-start gap-3 px-5 pt-5 pb-4 border-b border-slate-100">
           <div className="w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm flex-shrink-0"
             style={{ background: palette.bg, color: palette.color }}>
             {abbr}
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-slate-900 text-base leading-tight line-clamp-2">{subject.subject_name}</h3>
+            <h3 className="font-bold text-slate-900 text-base leading-tight break-words text-balance">{subject.subject_name}</h3>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">{subject.subject_code}</span>
               <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${subject.type === 'Lab' ? 'bg-purple-50 text-purple-700' : 'bg-teal-50 text-teal-700'}`}>
@@ -412,7 +412,7 @@ export default function SubjectsPage() {
                   onClick={() => setExpandedId(isExpanded ? null : subject.id)}
                 >
                   {/* Main row */}
-                  <div className="p-4 flex items-center gap-3">
+                  <div className={`p-4 flex gap-3 ${isExpanded ? 'items-start' : 'items-center'}`}>
                     {/* Avatar */}
                     <div className="w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm flex-shrink-0"
                       style={{ background: palette.bg, color: palette.color }}>
@@ -421,7 +421,7 @@ export default function SubjectsPage() {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-sm text-slate-900 leading-tight line-clamp-2">{subject.subject_name}</h3>
+                      <h3 className={`font-bold text-sm text-slate-900 leading-tight break-words text-balance ${isExpanded ? '' : 'line-clamp-2'}`}>{subject.subject_name}</h3>
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">{subject.subject_code}</span>
                         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${subject.type === 'Lab' ? 'bg-purple-50 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
