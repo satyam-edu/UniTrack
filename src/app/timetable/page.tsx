@@ -476,7 +476,7 @@ export default function TimetablePage() {
                       <div className="p-4 flex items-start justify-between gap-3">
                         {/* Left: Subject info */}
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-base text-foreground mb-1.5 truncate">
+                          <h3 className="font-bold text-base text-foreground mb-1.5 line-clamp-2 leading-tight">
                             {slot.subject.subject_name}
                           </h3>
 

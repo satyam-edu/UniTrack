@@ -272,7 +272,7 @@ export default function DashboardPage() {
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-sm truncate">{subject.subject_name}</h3>
+                    <h3 className="font-semibold text-sm line-clamp-2 leading-tight">{subject.subject_name}</h3>
                     <p className="text-xs text-text-muted mt-0.5">
                       {subject.subject_code} · {subject.type}
                     </p>

@@ -400,7 +400,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                     <div className="divide-y divide-amber-100 max-h-48 overflow-y-auto">
                       {summaryData!.skippedClasses.map((cls, i) => (
                         <div key={i} className="px-4 py-2.5">
-                          <p className="text-xs font-semibold text-slate-700 truncate">{cls.subject_name}</p>
+                          <p className="text-xs font-semibold text-slate-700 line-clamp-2 leading-tight">{cls.subject_name}</p>
                           <p className="text-[11px] text-slate-500 mt-0.5">
                             {cls.day} · {cls.start_time} – {cls.end_time}
                           </p>
@@ -726,7 +726,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                             {cls.day.slice(0, 3).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-800 truncate leading-tight">{cls.subject_name}</p>
+                            <p className="text-sm font-semibold text-slate-800 line-clamp-2 leading-tight">{cls.subject_name}</p>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               <span className="text-[11px] text-slate-500 font-medium">{cls.start_time} – {cls.end_time}</span>
                               {cls.category && (
