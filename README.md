@@ -194,4 +194,4 @@ Run the SQL migrations in your Supabase SQL editor:
 
 ## Authors
 
-**Satyam** — [GitHub](https://github.com/satyam-edu)
+**Satyam** — [LinkedIn](linkedin.com/in/satyam-in)
