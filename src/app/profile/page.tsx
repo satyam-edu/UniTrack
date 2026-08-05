@@ -999,10 +999,7 @@ export default function ProfilePage() {
           {/* Change Password */}
           <button
             type="button"
-            onClick={() => {
-              console.log('Change Password tapped — modal coming soon')
-              setShowChangePassword(true)
-            }}
+            onClick={() => setShowChangePassword(true)}
             className="flex items-center justify-center gap-2 font-bold py-4 rounded-2xl cursor-pointer transition-all duration-200 active:scale-95"
             style={{
               background: 'rgba(26,158,160,0.08)',

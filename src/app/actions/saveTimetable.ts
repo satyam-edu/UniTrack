@@ -93,7 +93,12 @@ export async function saveTimetableToDB(
   for (const cls of processedClasses) {
     const rawName = (cls.subject_name ?? '').trim()
     const rawCode = (cls.subject_code ?? '').trim()
-    const key = normaliseKey(rawCode || rawName)
+    // Name-first identity: a subject's name is what a human recognizes it by and is
+    // always present for any class that reaches this point. Code is a secondary hint
+    // and can legitimately be generic/shared (e.g. a department prefix like "ICT" when
+    // extraction can't isolate the full per-course code) — keying on code first would
+    // silently collapse two differently-named subjects into one under the first name seen.
+    const key = normaliseKey(rawName || rawCode)
     if (!key) continue
     if (!subjectCanonical.has(key)) {
       subjectCanonical.set(key, {
@@ -119,7 +124,7 @@ export async function saveTimetableToDB(
 
   const existingSubjectByKey = new Map<string, string>() // norm_key → existing id
   for (const s of existingSubjects ?? []) {
-    const key = normaliseKey((s.subject_code ?? '') || (s.subject_name ?? ''))
+    const key = normaliseKey((s.subject_name ?? '') || (s.subject_code ?? ''))
     if (key) existingSubjectByKey.set(key, s.id)
   }
 
@@ -157,7 +162,7 @@ export async function saveTimetableToDB(
     }
 
     for (const s of newSubs) {
-      const key = normaliseKey((s.subject_code ?? '') || (s.subject_name ?? ''))
+      const key = normaliseKey((s.subject_name ?? '') || (s.subject_code ?? ''))
       subjectIdMap.set(key, s.id)
     }
     newlyInsertedSubjectIds = newSubs.map((s) => s.id)
@@ -212,7 +217,7 @@ export async function saveTimetableToDB(
 
     const rawCode = (cls.subject_code ?? '').trim()
     const rawName = (cls.subject_name ?? '').trim()
-    const key       = normaliseKey(rawCode || rawName)
+    const key       = normaliseKey(rawName || rawCode)
     const subjectId = subjectIdMap.get(key)
 
     if (!subjectId) {

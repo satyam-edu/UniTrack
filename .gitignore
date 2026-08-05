@@ -45,3 +45,7 @@ AGENTS.md
 CLAUDE.md
 
 .cursor/
+.claude/
+.agents/
+.mcp.json
+skills-lock.json
