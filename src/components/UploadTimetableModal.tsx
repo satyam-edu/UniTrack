@@ -5,15 +5,17 @@ import { motion, AnimatePresence } from 'motion/react'
 import { useRouter } from 'next/navigation'
 import { parseTimetableImage } from '@/app/actions/extractTimetable'
 import { saveTimetableToDB } from '@/app/actions/saveTimetable'
+import { resolveSubjectCodes } from '@/app/actions/subjectCatalog'
 import type { ExtractedClass, SkippedClass } from '@/app/actions/extractTimetable'
 import { supabase } from '@/lib/supabase'
+import { normaliseSubjectCode } from '@/lib/subjectCode'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ToastType = 'success' | 'error'
 interface Toast { message: string; type: ToastType }
 
-type UploadStep = 'upload' | 'review' | 'group' | 'summary'
+type UploadStep = 'upload' | 'names' | 'review' | 'group' | 'summary'
 
 interface Props { onClose: () => void }
 
@@ -29,6 +31,18 @@ function extractGroups(data: ExtractedClass[]): string[] {
     if (g && g !== 'ALL') set.add(g)
   }
   return Array.from(set).sort()
+}
+
+/** One row per unique subject_code found in the extracted data, in first-seen order. */
+function extractUniqueCodes(data: ExtractedClass[]): { code: string; displayCode: string; category: string | null }[] {
+  const map = new Map<string, { code: string; displayCode: string; category: string | null }>()
+  for (const cls of data) {
+    const raw = (cls.subject_code ?? '').trim()
+    if (!raw) continue
+    const code = normaliseSubjectCode(raw)
+    if (!map.has(code)) map.set(code, { code, displayCode: raw, category: cls.category })
+  }
+  return Array.from(map.values())
 }
 
 /**
@@ -91,6 +105,11 @@ export default function UploadTimetableModal({ onClose }: Props) {
   const [detectedGroups, setDetectedGroups] = useState<string[]>([])
   const [hasParallelSlots, setHasParallelSlots] = useState(false)
 
+  // ── Names state (subject_code -> confirmed name) ─────────────────────────
+  const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({})
+  const [catalogCodes, setCatalogCodes]   = useState<Set<string>>(new Set())
+  const [isResolving, setIsResolving]     = useState(false)
+
   // ── Summary state (shown after import) ───────────────────────────────────
   const [summaryData, setSummaryData] = useState<{
     count: number
@@ -98,7 +117,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
     importedGroup: string | null
   } | null>(null)
 
-  const isLoading = isParsing || isImporting
+  const isLoading = isParsing || isResolving || isImporting
 
   const loadingPhrases = ["Scanning grid lines...", "Identifying subject codes...", "Organizing your week..."]
   const [parsingTextIdx, setParsingTextIdx] = useState(0)
@@ -188,7 +207,38 @@ export default function UploadTimetableModal({ onClose }: Props) {
         setDetectedGroups(groups)
         setHasParallelSlots(parallel)
         setExtractedData(result.classes)
-        setStep('review')
+
+        // Resolve subject codes against this student's batch catalog, so codes
+        // already named by a previous student of the same batch are pre-filled.
+        const uniqueCodes = extractUniqueCodes(result.classes)
+        let catalog: Awaited<ReturnType<typeof resolveSubjectCodes>> = {}
+        if (session?.access_token) {
+          setIsResolving(true)
+          try {
+            catalog = await resolveSubjectCodes(uniqueCodes.map((c) => c.code), session.access_token)
+          } catch {
+            // Catalog lookup failed — fall through with an empty catalog; the
+            // student can still name every subject manually on the next step.
+          } finally {
+            setIsResolving(false)
+          }
+        }
+
+        const prefilled: Record<string, string> = {}
+        const knownCodes = new Set<string>()
+        for (const { code } of uniqueCodes) {
+          const entry = catalog[code]
+          if (entry) {
+            prefilled[code] = entry.subject_name
+            knownCodes.add(code)
+          }
+        }
+        setResolvedNames(prefilled)
+        setCatalogCodes(knownCodes)
+
+        // Every code already has a confirmed name — skip straight to review.
+        const allResolved = uniqueCodes.length > 0 && uniqueCodes.every((c) => knownCodes.has(c.code))
+        setStep(allResolved ? 'review' : 'names')
       } else {
         setToast({ message: result.error, type: 'error' })
       }
@@ -197,6 +247,10 @@ export default function UploadTimetableModal({ onClose }: Props) {
     } finally {
       setIsParsing(false)
     }
+  }
+
+  const updateResolvedName = (code: string, name: string) => {
+    setResolvedNames((prev) => ({ ...prev, [code]: name }))
   }
 
   // ── Action 2: Decide whether to show group picker or import directly ───────
@@ -221,7 +275,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) throw new Error('Session expired. Please log in again.')
 
-      const result = await saveTimetableToDB(extractedData, session.access_token)
+      const result = await saveTimetableToDB(extractedData, resolvedNames, session.access_token)
       if (result.success) {
         // Persist the user's group choice to DB.
         // This runs after the timetable import so a failure here doesn't block the import.
@@ -279,16 +333,23 @@ export default function UploadTimetableModal({ onClose }: Props) {
 
   // ── Header labels ─────────────────────────────────────────────────────────
 
+  const uniqueCodes = extractedData ? extractUniqueCodes(extractedData) : []
+  const unresolvedCount = uniqueCodes.filter((c) => !resolvedNames[c.code]?.trim()).length
+
   const headerTitle =
     step === 'summary' ? 'Import Summary' :
     step === 'group'   ? 'Which group are you in?' :
     step === 'review'  ? 'Review Extracted Schedule' :
+    step === 'names'   ? 'Name Your Subjects' :
     'Upload Timetable'
 
   const headerSubtitle =
     step === 'summary' ? `${summaryData!.count} imported · ${summaryData!.skippedClasses.length} skipped` :
     step === 'group'   ? 'We detected parallel classes at the same time. Pick yours so your Home screen shows only your classes.' :
     step === 'review'  ? `${extractedData!.length} class${extractedData!.length !== 1 ? 'es' : ''} detected · Edit before importing` :
+    step === 'names'   ? (unresolvedCount > 0
+        ? `${unresolvedCount} of ${uniqueCodes.length} need a name`
+        : `All ${uniqueCodes.length} codes matched from your batch's catalog`) :
     'AI-powered extraction · V2.0'
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -315,13 +376,22 @@ export default function UploadTimetableModal({ onClose }: Props) {
               <p className="text-xs text-slate-400 mt-0.5">{headerSubtitle}</p>
             </div>
             <div className="flex items-center gap-2">
-              {step === 'review' && !isImporting && (
+              {step === 'names' && !isLoading && (
                 <button
-                  onClick={() => { setExtractedData(null); setDetectedGroups([]); setEditingIndex(null); setStep('upload') }}
+                  onClick={() => { setExtractedData(null); setResolvedNames({}); setCatalogCodes(new Set()); setDetectedGroups([]); setStep('upload') }}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
                   style={{ background: 'rgba(26,158,160,0.08)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
                 >
                   ← Re-upload
+                </button>
+              )}
+              {step === 'review' && !isImporting && (
+                <button
+                  onClick={() => setStep('names')}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                  style={{ background: 'rgba(26,158,160,0.08)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
+                >
+                  ← Back
                 </button>
               )}
               {step === 'group' && !isImporting && (
@@ -400,7 +470,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                     <div className="divide-y divide-amber-100 max-h-48 overflow-y-auto">
                       {summaryData!.skippedClasses.map((cls, i) => (
                         <div key={i} className="px-4 py-2.5">
-                          <p className="text-xs font-semibold text-slate-700 line-clamp-2 leading-tight">{cls.subject_name}</p>
+                          <p className="text-xs font-semibold text-slate-700 line-clamp-2 leading-tight font-mono">{cls.subject_code}</p>
                           <p className="text-[11px] text-slate-500 mt-0.5">
                             {cls.day} · {cls.start_time} – {cls.end_time}
                           </p>
@@ -482,6 +552,73 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 <p className="text-center text-[11px] text-slate-400 -mt-2">
                   You can set your group anytime from Profile → Group
                 </p>
+              </motion.div>
+            )}
+
+            {/* ── Names ──────────────────────────────────────────────────── */}
+            {step === 'names' && (
+              <motion.div
+                key="names"
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -24 }}
+                transition={{ duration: 0.18 }}
+                className="flex flex-col min-h-0 flex-1"
+              >
+                <div className="mx-4 mt-3 flex items-start gap-2.5 px-3.5 py-3 rounded-2xl bg-blue-50 border border-blue-200/70">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  <p className="text-xs text-blue-700 font-medium leading-snug">
+                    One name per code — it&apos;s applied to every class using that code. Codes tagged <strong>from catalog</strong> were already named by someone else in your batch; correcting one updates it for everyone.
+                  </p>
+                </div>
+
+                <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2" style={{ maxHeight: '58vh' }}>
+                  {uniqueCodes.map(({ code, displayCode, category }) => {
+                    const fromCatalog = catalogCodes.has(code)
+                    const value = resolvedNames[code] ?? ''
+                    return (
+                      <div key={code} className="rounded-2xl border border-slate-100 bg-slate-50 px-3.5 py-3">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="text-[11px] font-mono font-bold text-slate-500">{displayCode}</span>
+                          {category && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                              style={{
+                                background: category === 'Lab' ? 'rgba(168,85,247,0.10)' : 'rgba(26,158,160,0.10)',
+                                color: category === 'Lab' ? '#7c3aed' : '#0f766e',
+                              }}>
+                              {category}
+                            </span>
+                          )}
+                          {fromCatalog && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(34,197,94,0.10)', color: '#15803d' }}>
+                              from catalog
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          value={value}
+                          onChange={(e) => updateResolvedName(code, e.target.value)}
+                          autoFocus={!fromCatalog && uniqueCodes.find((c) => !resolvedNames[c.code]?.trim())?.code === code}
+                          placeholder="e.g. Data Structures"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="px-4 pb-5 pt-3 border-t border-slate-100 flex-shrink-0">
+                  <button
+                    onClick={() => setStep('review')}
+                    disabled={unresolvedCount > 0}
+                    className="w-full py-3.5 rounded-2xl font-bold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', boxShadow: '0 4px 16px rgba(26,158,160,0.30)' }}
+                  >
+                    {unresolvedCount > 0 ? `Name ${unresolvedCount} more subject${unresolvedCount !== 1 ? 's' : ''}` : 'Continue →'}
+                  </button>
+                </div>
               </motion.div>
             )}
 
@@ -616,9 +753,20 @@ export default function UploadTimetableModal({ onClose }: Props) {
                   </div>
                 )}
 
-                {/* Scrollable list */}
-                <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2" style={{ maxHeight: '52vh' }}>
-                  {extractedData!.map((cls, i) => (
+                {/* Scrollable list — segregated into Theory and Lab */}
+                <div className="overflow-y-auto flex-1 px-4 py-3 space-y-4" style={{ maxHeight: '52vh' }}>
+                  {(['Theory', 'Lab'] as const).map((section) => {
+                    const rows = extractedData!
+                      .map((cls, i) => ({ cls, i }))
+                      .filter(({ cls }) => (cls.category === 'Lab') === (section === 'Lab'))
+                    if (rows.length === 0) return null
+                    return (
+                      <div key={section}>
+                        <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2 px-0.5">
+                          {section} Classes ({rows.length})
+                        </p>
+                        <div className="space-y-2">
+                  {rows.map(({ cls, i }) => (
                     <div key={i}
                       className="rounded-2xl border border-slate-100 bg-slate-50 overflow-hidden transition-shadow"
                       style={{ boxShadow: editingIndex === i ? '0 0 0 2px #1a9ea0' : undefined }}
@@ -626,14 +774,6 @@ export default function UploadTimetableModal({ onClose }: Props) {
                       {editingIndex === i ? (
                         /* ── Expanded edit form ──────────────────────── */
                         <div className="p-3 space-y-2.5">
-                          <div>
-                            <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Subject Name</label>
-                            <input
-                              value={cls.subject_name}
-                              onChange={e => updateClass(i, 'subject_name', e.target.value)}
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
-                            />
-                          </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1 block">Code</label>
@@ -726,7 +866,9 @@ export default function UploadTimetableModal({ onClose }: Props) {
                             {cls.day.slice(0, 3).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-800 line-clamp-2 leading-tight">{cls.subject_name}</p>
+                            <p className="text-sm font-semibold text-slate-800 line-clamp-2 leading-tight">
+                              {resolvedNames[normaliseSubjectCode(cls.subject_code ?? '')] || cls.subject_code || 'Unnamed'}
+                            </p>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               <span className="text-[11px] text-slate-500 font-medium">{cls.start_time} – {cls.end_time}</span>
                               {cls.category && (
@@ -775,6 +917,10 @@ export default function UploadTimetableModal({ onClose }: Props) {
                       )}
                     </div>
                   ))}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 {/* Confirm footer */}

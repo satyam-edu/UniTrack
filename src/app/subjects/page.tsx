@@ -253,13 +253,14 @@ export default function SubjectsPage() {
 
     const enriched: Subject[] = subjectsData.map((sub) => {
       const records = (attendance || []).filter((a: any) => a.subject_id === sub.id)
-      const present  = records.filter((r: any) => r.status === 'Present').length
+      // Proxy counts toward "present" like Present — see src/app/page.tsx for the rationale.
+      const present  = records.filter((r: any) => r.status === 'Present' || r.status === 'Proxy').length
       const absent   = records.filter((r: any) => r.status === 'Absent').length
       const total    = present + absent
       const percentage = total > 0 ? (present / total) * 100 : 0
 
       const recentDates = records
-        .filter((r: any) => r.status === 'Present' && r.date)
+        .filter((r: any) => (r.status === 'Present' || r.status === 'Proxy') && r.date)
         .map((r: any) => r.date as string)
         .sort((a, b) => b.localeCompare(a))
         .slice(0, 10)

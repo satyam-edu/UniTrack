@@ -6,6 +6,10 @@ import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+// Batch is the joining year, kept constrained (not free text) so it reliably
+// keys the shared subject-code catalog across every student of a batch.
+const batchYears = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i)
+
 export default function SignupPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -23,7 +27,7 @@ export default function SignupPage() {
     password: '',
   })
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
@@ -217,19 +221,26 @@ export default function SignupPage() {
             </div>
             <div>
               <label htmlFor="batch" className="block text-sm font-medium text-text-secondary mb-1.5">
-                Batch
+                Batch <span className="text-danger">*</span>
               </label>
-              <input
+              <select
                 id="batch"
                 name="batch"
-                type="text"
+                required
                 value={form.batch}
                 onChange={handleChange}
-                placeholder="2023-27"
-                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
-              />
+                className="w-full bg-input-bg border border-input-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent appearance-none cursor-pointer"
+              >
+                <option value="">Year joined</option>
+                {batchYears.map((y) => (
+                  <option key={y} value={String(y)}>{y}</option>
+                ))}
+              </select>
             </div>
           </div>
+          <p className="text-[11px] text-text-muted -mt-1 px-1">
+            Your joining year — matches you with others in your batch so scanned timetables can share subject names.
+          </p>
 
           {/* College */}
           <div>

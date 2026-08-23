@@ -1,7 +1,8 @@
 'use server'
 
 import { supabaseAdmin } from '@/lib/supabase-server'
-import { createClient } from '@supabase/supabase-js'
+import { buildAuthedClient } from '@/lib/supabase-with-token'
+import { normaliseSubjectCode } from '@/lib/subjectCode'
 import type { ExtractedClass, ImportResult, SkippedClass } from './extractTimetable'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,24 +37,6 @@ function normaliseType(category: string | null): string {
   return 'Theory'
 }
 
-/** Build an authenticated supabase-js client from a hand-off token */
-function buildClient(token: string) {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } } }
-  )
-}
-
-/** Normalise a subject code/name for deduplication matching */
-function normaliseKey(str: string): string {
-  return str
-    .replace(/\s+/g, '')
-    .replace(/\(P\)$/i, '')
-    .replace(/\(T\)$/i, '')
-    .toUpperCase()
-}
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ExistingSlot = {
@@ -63,16 +46,20 @@ type ExistingSlot = {
   group_designation: string | null
 }
 
+/** Confirmed subject names from the 'names' review step: normalised subject_code -> subject_name. */
+export type ResolvedNames = Record<string, string>
+
 // ── Save Action ───────────────────────────────────────────────────────────────
 
 export async function saveTimetableToDB(
   classes: ExtractedClass[],
+  resolvedNames: ResolvedNames,
   token: string
 ): Promise<ImportResult> {
   // ── Auth ───────────────────────────────────────────────────────────────────
   if (!token) throw new Error('You must be logged in.')
 
-  const { data: { user }, error: authError } = await buildClient(token).auth.getUser()
+  const { data: { user }, error: authError } = await buildAuthedClient(token).auth.getUser()
   if (authError || !user) throw new Error('Invalid or expired session.')
 
   const userId = user.id
@@ -84,26 +71,27 @@ export async function saveTimetableToDB(
   // unresolved overlap until they do. This keeps group labels meaningful and consistent.
   const processedClasses: ExtractedClass[] = classes
 
-  // ── Step 2: Deduplicate subjects by normalised code/name ──────────────────
+  // ── Step 2: Deduplicate subjects by normalised code ────────────────────────
+  // Identity is code-first: subject_code is always printed on the timetable and
+  // reliably extracted, unlike a subject name (which this app no longer asks the
+  // AI to guess — see extractTimetable.ts). The confirmed name for each code comes
+  // from the 'names' review step (resolvedNames), sourced from the batch's shared
+  // subject_catalog or typed in fresh by the student.
   const subjectCanonical = new Map<
-    string,
-    { name: string; code: string; faculty: string | null; type: string }
+    string, // normalised subject_code
+    { code: string; name: string; faculty: string | null; type: string }
   >()
 
   for (const cls of processedClasses) {
-    const rawName = (cls.subject_name ?? '').trim()
     const rawCode = (cls.subject_code ?? '').trim()
-    // Name-first identity: a subject's name is what a human recognizes it by and is
-    // always present for any class that reaches this point. Code is a secondary hint
-    // and can legitimately be generic/shared (e.g. a department prefix like "ICT" when
-    // extraction can't isolate the full per-course code) — keying on code first would
-    // silently collapse two differently-named subjects into one under the first name seen.
-    const key = normaliseKey(rawName || rawCode)
+    const key = normaliseSubjectCode(rawCode)
     if (!key) continue
+    const name = resolvedNames[key]?.trim()
+    if (!name) continue // no confirmed name — caught as a skipped class in Step 5
     if (!subjectCanonical.has(key)) {
       subjectCanonical.set(key, {
-        name: rawName,
         code: rawCode,
+        name,
         faculty: cls.faculty_name?.trim() || null,
         type: normaliseType(cls.category),
       })
@@ -114,21 +102,51 @@ export async function saveTimetableToDB(
     return { success: false, error: 'No valid classes to import.' }
   }
 
+  // ── Step 2B: Write confirmed names through to the shared batch catalog ─────
+  // Self-correcting: every confirmed name (whether pre-filled-and-untouched,
+  // corrected, or freshly typed) becomes the new default for the next student
+  // of the same batch who scans a timetable with this code. Best-effort — a
+  // failure here must not block the timetable import itself.
+  try {
+    const { data: profile } = await supabaseAdmin
+      .from('users')
+      .select('batch')
+      .eq('id', userId)
+      .single()
+
+    const batch = profile?.batch?.trim()
+    if (batch) {
+      const catalogRows = Array.from(subjectCanonical.entries()).map(([code, s]) => ({
+        batch,
+        subject_code: code,
+        subject_name: s.name,
+        type: s.type,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      }))
+      await supabaseAdmin
+        .from('subject_catalog')
+        .upsert(catalogRows, { onConflict: 'batch,subject_code' })
+    }
+  } catch (err) {
+    console.error('[saveTimetable] catalog upsert failed (non-blocking):', err)
+  }
+
   // ── Step 3: Match new subjects to existing ones → reuse IDs where possible ─
   // Reusing an existing subject_id means all attendance records for that subject
   // survive the re-upload, regardless of timetable changes.
   const { data: existingSubjects } = await supabaseAdmin
     .from('subjects')
-    .select('id, subject_code, subject_name')
+    .select('id, subject_code')
     .eq('user_id', userId)
 
-  const existingSubjectByKey = new Map<string, string>() // norm_key → existing id
+  const existingSubjectByKey = new Map<string, string>() // norm_code → existing id
   for (const s of existingSubjects ?? []) {
-    const key = normaliseKey((s.subject_name ?? '') || (s.subject_code ?? ''))
+    const key = normaliseSubjectCode(s.subject_code ?? '')
     if (key) existingSubjectByKey.set(key, s.id)
   }
 
-  const subjectIdMap = new Map<string, string>() // norm_key → final id
+  const subjectIdMap = new Map<string, string>() // norm_code → final id
   const keptSubjectIds  = new Set<string>()      // existing IDs we're reusing
   const subjectsToInsert: object[] = []
 
@@ -142,7 +160,7 @@ export async function saveTimetableToDB(
       subjectsToInsert.push({
         user_id:      userId,
         subject_name: s.name,
-        subject_code: s.code || s.name.slice(0, 10).toUpperCase(),
+        subject_code: s.code,
         faculty_name: s.faculty,
         type:         s.type,
       })
@@ -155,14 +173,14 @@ export async function saveTimetableToDB(
     const { data: newSubs, error: subErr } = await supabaseAdmin
       .from('subjects')
       .insert(subjectsToInsert)
-      .select('id, subject_code, subject_name')
+      .select('id, subject_code')
 
     if (subErr || !newSubs) {
       return { success: false, error: 'Failed to save subjects. Please try again.' }
     }
 
     for (const s of newSubs) {
-      const key = normaliseKey((s.subject_name ?? '') || (s.subject_code ?? ''))
+      const key = normaliseSubjectCode(s.subject_code ?? '')
       subjectIdMap.set(key, s.id)
     }
     newlyInsertedSubjectIds = newSubs.map((s) => s.id)
@@ -193,7 +211,7 @@ export async function saveTimetableToDB(
 
   const pushSkipped = (cls: ExtractedClass, reason: string) => {
     skippedClasses.push({
-      subject_name: cls.subject_name || 'Unknown',
+      subject_code: cls.subject_code || 'Unknown',
       day:          cls.day          || '?',
       start_time:   cls.start_time   || '?',
       end_time:     cls.end_time     || '?',
@@ -202,7 +220,7 @@ export async function saveTimetableToDB(
   }
 
   for (const cls of processedClasses) {
-    if (!cls.subject_name || !cls.day || !cls.start_time || !cls.end_time) {
+    if (!cls.subject_code || !cls.day || !cls.start_time || !cls.end_time) {
       pushSkipped(cls, 'Missing required fields')
       continue
     }
@@ -216,12 +234,11 @@ export async function saveTimetableToDB(
     }
 
     const rawCode = (cls.subject_code ?? '').trim()
-    const rawName = (cls.subject_name ?? '').trim()
-    const key       = normaliseKey(rawName || rawCode)
+    const key       = normaliseSubjectCode(rawCode)
     const subjectId = subjectIdMap.get(key)
 
     if (!subjectId) {
-      pushSkipped(cls, 'Could not match subject')
+      pushSkipped(cls, resolvedNames[key]?.trim() ? 'Could not match subject' : 'Missing subject name')
       continue
     }
 
