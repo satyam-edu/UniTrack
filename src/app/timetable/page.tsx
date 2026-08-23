@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { springSmooth, springSnappy, fadeSlide } from '@/lib/motion'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -9,6 +10,7 @@ import AddClassModal from '@/components/AddClassModal'
 import EditClassModal from '@/components/EditClassModal'
 import ScheduleClassModal from '@/components/ScheduleClassModal'
 import UploadTimetableModal from '@/components/UploadTimetableModal'
+import TimetableGrid, { type GridEntry } from '@/components/TimetableGrid'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,7 @@ export default function TimetablePage() {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
+  const [timetableView, setTimetableView] = useState<'list' | 'grid'>('list')
   const actionMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Data loading ─────────────────────────────────────────────────────────────
@@ -165,6 +168,28 @@ export default function TimetablePage() {
     return slot.group_designation.toUpperCase() === viewingGroup.toUpperCase()
   })
 
+  // Grid view shows the whole week at once, so it filters across every day
+  // (not just selectedDay) using the same group logic as the list view.
+  const gridEntries: GridEntry[] = useMemo(() => {
+    return Object.values(schedule)
+      .flat()
+      .filter((slot) => {
+        if (viewingGroup.toUpperCase() === 'ALL') return true
+        if (!slot.group_designation || slot.group_designation.toUpperCase() === 'ALL') return true
+        return slot.group_designation.toUpperCase() === viewingGroup.toUpperCase()
+      })
+      .map((slot) => ({
+        day: slot.day_of_week,
+        start_time: formatTime(slot.start_time),
+        end_time: formatTime(slot.end_time),
+        label: slot.subject.subject_name,
+        code: slot.subject.subject_code,
+        room: slot.room_location,
+        group: slot.group_designation,
+        category: slot.subject.type,
+      }))
+  }, [schedule, viewingGroup])
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   // Pulse the help icon whenever the timetable is empty — guides new users to read it first
@@ -178,7 +203,7 @@ export default function TimetablePage() {
       <motion.main
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] }}
+        transition={fadeSlide}
         className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
         style={{ willChange: 'opacity, transform' }}
       >
@@ -224,7 +249,7 @@ export default function TimetablePage() {
                   fill="none" stroke="currentColor" strokeWidth="2.8"
                   strokeLinecap="round" strokeLinejoin="round"
                   animate={{ rotate: isActionMenuOpen ? 45 : 0 }}
-                  transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                  transition={springSnappy}
                 >
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
@@ -247,7 +272,7 @@ export default function TimetablePage() {
                       initial={{ opacity: 0, scale: 0.92, y: -6 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.92, y: -6 }}
-                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      transition={springSnappy}
                       className="absolute right-0 top-full mt-2 z-40 w-56 rounded-2xl overflow-hidden"
                       style={{
                         background: 'rgba(255,255,255,0.88)',
@@ -309,7 +334,24 @@ export default function TimetablePage() {
           </div>{/* end flex gap-2 */}
         </div>
 
-        {/* ── Day Selector ───────────────────────────────────────────────────── */}
+        {/* ── List / Grid toggle ────────────────────────────────────────────── */}
+        <div className="flex rounded-2xl p-1.5 mb-4 bg-white border border-slate-200/60">
+          {(['list', 'grid'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setTimetableView(v)}
+              className="flex-1 py-2 rounded-xl text-sm font-bold capitalize cursor-pointer transition-all"
+              style={timetableView === v
+                ? { background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', color: 'white', boxShadow: '0 4px 14px rgba(26,158,160,0.30)' }
+                : { color: '#94a3b8' }}
+            >
+              {v} view
+            </button>
+          ))}
+        </div>
+
+        {/* ── Day Selector — list view only; grid view shows the whole week ──── */}
+        {timetableView === 'list' && (
         <div
           className="flex items-center gap-1 mb-6 p-1.5 rounded-2xl overflow-x-auto scrollbar-hide bg-white border border-slate-200/60"
         >
@@ -330,7 +372,7 @@ export default function TimetablePage() {
                     layoutId="activeDay"
                     className="absolute inset-0 rounded-full bg-teal-500"
                     style={{ boxShadow: '0 4px 14px rgba(20,184,166,0.35)' }}
-                    transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                    transition={springSnappy}
                   />
                 )}
                 <span className="relative z-10 text-xs font-bold">{short}</span>
@@ -345,6 +387,7 @@ export default function TimetablePage() {
             )
           })}
         </div>
+        )}
 
         {/* ── Group / Batch Selector ─────────────────────────────────────────── */}
         {availableGroups.length > 1 && (
@@ -367,7 +410,7 @@ export default function TimetablePage() {
                         background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
                         boxShadow: '0 4px 14px rgba(26,158,160,0.35)',
                       }}
-                      transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                      transition={springSnappy}
                     />
                   )}
                   <span className="relative z-10">{group}</span>
@@ -377,7 +420,13 @@ export default function TimetablePage() {
           </div>
         )}
 
+        {/* ── Grid view — whole week at once ──────────────────────────────────── */}
+        {timetableView === 'grid' && !isLoading && (
+          <TimetableGrid entries={gridEntries} />
+        )}
+
         {/* ── Timeline + Cards ──────────────────────────────────────────────── */}
+        {timetableView === 'list' && (
         <AnimatePresence mode="wait">
           {isLoading ? (
             <motion.div
@@ -402,7 +451,7 @@ export default function TimetablePage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.25 }}
+              transition={fadeSlide}
               className="flex flex-col items-center justify-center py-16 rounded-3xl mt-4 bg-white border border-dashed border-teal-300/50"
             >
               <div
@@ -430,7 +479,7 @@ export default function TimetablePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={fadeSlide}
               className="relative"
             >
               {/* Vertical timeline line */}
@@ -447,11 +496,7 @@ export default function TimetablePage() {
                     key={slot.id}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{
-                      delay: i * 0.06,
-                      type: 'spring' as const,
-                      damping: 25,
-                    }}
+                    transition={{ ...springSmooth, delay: i * 0.06 }}
                     className="flex gap-4 items-start"
                     style={{ willChange: 'transform, opacity' }}
                   >
@@ -617,6 +662,7 @@ export default function TimetablePage() {
             </motion.div>
           )}
         </AnimatePresence>
+        )}
       </motion.main>
 
       <BottomNav />
@@ -664,7 +710,7 @@ export default function TimetablePage() {
               initial={{ opacity: 0, y: 32, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 32, scale: 0.97 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              transition={springSmooth}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-lg bg-white rounded-3xl overflow-hidden flex flex-col max-h-[85dvh]"
               style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}

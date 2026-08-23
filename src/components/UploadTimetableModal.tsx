@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { springSmooth, fadeSlide } from '@/lib/motion'
 import { useRouter } from 'next/navigation'
 import { parseTimetableImage } from '@/app/actions/extractTimetable'
 import { saveTimetableToDB } from '@/app/actions/saveTimetable'
@@ -9,6 +10,7 @@ import { resolveSubjectCodes } from '@/app/actions/subjectCatalog'
 import type { ExtractedClass, SkippedClass } from '@/app/actions/extractTimetable'
 import { supabase } from '@/lib/supabase'
 import { normaliseSubjectCode } from '@/lib/subjectCode'
+import TimetableGrid, { type GridEntry } from '@/components/TimetableGrid'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,7 +110,9 @@ export default function UploadTimetableModal({ onClose }: Props) {
   // ── Names state (subject_code -> confirmed name) ─────────────────────────
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({})
   const [catalogCodes, setCatalogCodes]   = useState<Set<string>>(new Set())
+  const [legendCodes, setLegendCodes]     = useState<Set<string>>(new Set())
   const [isResolving, setIsResolving]     = useState(false)
+  const [reviewView, setReviewView]       = useState<'list' | 'grid'>('list')
 
   // ── Summary state (shown after import) ───────────────────────────────────
   const [summaryData, setSummaryData] = useState<{
@@ -225,19 +229,37 @@ export default function UploadTimetableModal({ onClose }: Props) {
         }
 
         const prefilled: Record<string, string> = {}
-        const knownCodes = new Set<string>()
+        const knownCodes = new Set<string>()   // human-confirmed, from the batch catalog
+        const legendCodes = new Set<string>()  // AI-read off an in-image legend, unconfirmed
+
+        // Base layer: a name Gemini itself read off a subject-name legend on
+        // the page, when one exists (most timetables don't have one).
+        for (const cls of result.classes) {
+          const raw = (cls.subject_code ?? '').trim()
+          if (!raw) continue
+          const code = normaliseSubjectCode(raw)
+          const name = cls.subject_name?.trim()
+          if (name && !prefilled[code]) {
+            prefilled[code] = name
+            legendCodes.add(code)
+          }
+        }
+
+        // Catalog entries are human-confirmed — they override an AI legend read.
         for (const { code } of uniqueCodes) {
           const entry = catalog[code]
           if (entry) {
             prefilled[code] = entry.subject_name
             knownCodes.add(code)
+            legendCodes.delete(code)
           }
         }
         setResolvedNames(prefilled)
         setCatalogCodes(knownCodes)
+        setLegendCodes(legendCodes)
 
-        // Every code already has a confirmed name — skip straight to review.
-        const allResolved = uniqueCodes.length > 0 && uniqueCodes.every((c) => knownCodes.has(c.code))
+        // Every code already has a name (catalog or legend) — skip straight to review.
+        const allResolved = uniqueCodes.length > 0 && uniqueCodes.every((c) => prefilled[c.code]?.trim())
         setStep(allResolved ? 'review' : 'names')
       } else {
         setToast({ message: result.error, type: 'error' })
@@ -365,7 +387,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
-          transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+          transition={springSmooth}
           className="w-full sm:max-w-lg bg-white shadow-2xl text-slate-800 rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col"
           style={{ maxHeight: '92vh' }}
         >
@@ -378,7 +400,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
             <div className="flex items-center gap-2">
               {step === 'names' && !isLoading && (
                 <button
-                  onClick={() => { setExtractedData(null); setResolvedNames({}); setCatalogCodes(new Set()); setDetectedGroups([]); setStep('upload') }}
+                  onClick={() => { setExtractedData(null); setResolvedNames({}); setCatalogCodes(new Set()); setLegendCodes(new Set()); setDetectedGroups([]); setStep('upload') }}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
                   style={{ background: 'rgba(26,158,160,0.08)', color: '#1a9ea0', border: '1px solid rgba(26,158,160,0.20)' }}
                 >
@@ -426,7 +448,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                transition={fadeSlide}
                 className="px-5 pb-5 pt-4 flex flex-col gap-4"
               >
                 <div className="flex flex-col items-center py-6 gap-3 text-center">
@@ -498,7 +520,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 initial={{ opacity: 0, x: 24 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -24 }}
-                transition={{ duration: 0.18 }}
+                transition={fadeSlide}
                 className="px-5 pb-5 pt-4 flex flex-col gap-4 overflow-y-auto"
                 style={{ maxHeight: '72vh' }}
               >
@@ -562,7 +584,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 initial={{ opacity: 0, x: 24 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -24 }}
-                transition={{ duration: 0.18 }}
+                transition={fadeSlide}
                 className="flex flex-col min-h-0 flex-1"
               >
                 <div className="mx-4 mt-3 flex items-start gap-2.5 px-3.5 py-3 rounded-2xl bg-blue-50 border border-blue-200/70">
@@ -577,6 +599,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2" style={{ maxHeight: '58vh' }}>
                   {uniqueCodes.map(({ code, displayCode, category }) => {
                     const fromCatalog = catalogCodes.has(code)
+                    const fromLegend = legendCodes.has(code)
                     const value = resolvedNames[code] ?? ''
                     return (
                       <div key={code} className="rounded-2xl border border-slate-100 bg-slate-50 px-3.5 py-3">
@@ -594,6 +617,11 @@ export default function UploadTimetableModal({ onClose }: Props) {
                           {fromCatalog && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(34,197,94,0.10)', color: '#15803d' }}>
                               from catalog
+                            </span>
+                          )}
+                          {fromLegend && !fromCatalog && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(59,130,246,0.10)', color: '#1d4ed8' }}>
+                              read from legend — please check
                             </span>
                           )}
                         </div>
@@ -629,7 +657,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                transition={fadeSlide}
                 className="px-5 pb-5 pt-4 flex flex-col gap-4"
               >
                 {isParsing ? (
@@ -715,6 +743,16 @@ export default function UploadTimetableModal({ onClose }: Props) {
                       </p>
                     </div>
 
+                    {/* ℹ️ Multi-page notice */}
+                    <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-2xl bg-blue-50 border border-blue-200/70">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                      <p className="text-xs text-blue-700 font-medium leading-snug">
+                        <strong>Multi-page PDF? Only the first page is read.</strong> If your timetable spans several pages, upload one page at a time instead.
+                      </p>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={onClose} disabled={isLoading}
                         className="py-3 rounded-xl font-semibold text-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
@@ -738,7 +776,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                transition={fadeSlide}
                 className="flex flex-col min-h-0 flex-1"
               >
                 {/* Parallel-but-unlabeled info banner */}
@@ -753,7 +791,41 @@ export default function UploadTimetableModal({ onClose }: Props) {
                   </div>
                 )}
 
+                {/* List/Grid toggle */}
+                <div className="mx-4 mt-3 flex rounded-xl p-1 bg-slate-100">
+                  {(['list', 'grid'] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setReviewView(v)}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-bold capitalize cursor-pointer transition-all"
+                      style={reviewView === v
+                        ? { background: 'white', color: '#0f766e', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }
+                        : { color: '#94a3b8' }}
+                    >
+                      {v} view
+                    </button>
+                  ))}
+                </div>
+
+                {reviewView === 'grid' && (
+                  <div className="overflow-y-auto flex-1 px-4 py-3" style={{ maxHeight: '52vh' }}>
+                    <TimetableGrid
+                      entries={extractedData!.map((cls): GridEntry => ({
+                        day: cls.day,
+                        start_time: cls.start_time,
+                        end_time: cls.end_time,
+                        label: resolvedNames[normaliseSubjectCode(cls.subject_code ?? '')] || cls.subject_code || 'Unnamed',
+                        code: cls.subject_code,
+                        room: cls.room,
+                        group: cls.group_designation,
+                        category: cls.category,
+                      }))}
+                    />
+                  </div>
+                )}
+
                 {/* Scrollable list — segregated into Theory and Lab */}
+                {reviewView === 'list' && (
                 <div className="overflow-y-auto flex-1 px-4 py-3 space-y-4" style={{ maxHeight: '52vh' }}>
                   {(['Theory', 'Lab'] as const).map((section) => {
                     const rows = extractedData!
@@ -922,6 +994,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
                     )
                   })}
                 </div>
+                )}
 
                 {/* Confirm footer */}
                 <div className="px-4 pb-5 pt-3 border-t border-slate-100 flex-shrink-0 space-y-2">
@@ -966,7 +1039,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
             initial={{ opacity: 0, y: 50, x: '-50%' }}
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: 50, x: '-50%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+            transition={springSmooth}
             className="fixed bottom-24 left-1/2 px-5 py-3 rounded-xl shadow-lg z-[60] text-sm font-semibold max-w-[90vw] text-center text-white"
             style={{
               background: toast.type === 'success'

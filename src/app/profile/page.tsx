@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
+import { springSmooth, fadeSlide } from '@/lib/motion'
 import { supabase } from '@/lib/supabase'
 import { deleteUserAccount } from '@/app/actions/auth'
 import BottomNav from '@/components/BottomNav'
+import FeedbackButton from '@/components/FeedbackButton'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import OnboardingModal from '@/components/OnboardingModal'
 
@@ -109,7 +111,7 @@ function ChangePasswordModal({ onClose, userEmail }: { onClose: () => void; user
         initial={{ opacity: 0, scale: 0.94, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 12 }}
-        transition={{ type: 'spring' as const, damping: 25, stiffness: 300 }}
+        transition={springSmooth}
         className="w-full max-w-sm rounded-3xl overflow-hidden bg-white/95 border border-white/70"
         style={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}
       >
@@ -312,7 +314,7 @@ function EditProfileModal({
         initial={{ opacity: 0, scale: 0.94, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 12 }}
-        transition={{ type: 'spring' as const, damping: 25, stiffness: 300 }}
+        transition={springSmooth}
         className="w-full max-w-md rounded-3xl overflow-hidden bg-white/95 border border-white/70"
         style={{
           backdropFilter: 'blur(24px)',
@@ -717,7 +719,7 @@ export default function ProfilePage() {
       <motion.main
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] }}
+        transition={fadeSlide}
         className="flex-1 flex flex-col px-4 py-6 pb-28 max-w-lg mx-auto w-full"
         style={{ willChange: 'opacity, transform' }}
       >
@@ -729,7 +731,7 @@ export default function ProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.03, type: 'spring' as const, damping: 25 }}
+          transition={{ ...springSmooth, delay: 0.03 }}
           className="relative rounded-3xl overflow-hidden mb-4 shadow-xl"
           style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 55%, #0a6b70 100%)' }}
         >
@@ -771,7 +773,7 @@ export default function ProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.06, type: 'spring' as const, damping: 25 }}
+          transition={{ ...springSmooth, delay: 0.06 }}
           className={`rounded-3xl overflow-hidden mb-4 ${GLASS_CARD_CLASS}`}
           style={glassCard}
         >
@@ -868,7 +870,7 @@ export default function ProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12, type: 'spring' as const, damping: 25 }}
+          transition={{ ...springSmooth, delay: 0.12 }}
           className={`rounded-3xl overflow-hidden mb-4 ${GLASS_CARD_CLASS}`}
           style={glassCard}
         >
@@ -961,7 +963,7 @@ export default function ProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12, type: 'spring' as const, damping: 25 }}
+          transition={{ ...springSmooth, delay: 0.12 }}
           className={`rounded-3xl overflow-hidden mb-6 ${GLASS_CARD_CLASS}`}
           style={glassCard}
         >
@@ -1063,8 +1065,31 @@ export default function ProfilePage() {
             Delete Account
           </button>
         </div>
+
+        {/* ── Credits ───────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-center gap-1.5 pb-2 text-xs text-text-muted">
+          <span>Built by</span>
+          <a
+            href="https://github.com/satyam-edu"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-accent hover:text-accent-hover transition-colors"
+          >
+            Satyam Kumar
+          </a>
+          <span>&amp;</span>
+          <a
+            href="https://github.com/shreyansh0714"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-accent hover:text-accent-hover transition-colors"
+          >
+            Shreyansh Jain
+          </a>
+        </div>
       </motion.main>
 
+      <FeedbackButton />
       <BottomNav />
 
       {/* Delete Account Modal */}
