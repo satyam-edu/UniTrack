@@ -224,7 +224,15 @@ Return the corrected JSON object (same "columns"/"classes" shape) only. Do not c
     ])
     const verifyText = verifyResult.response.text().replace(/```json/gi, '').replace(/```/g, '').trim()
     const verified: ColumnPassResult = JSON.parse(verifyText)
-    if (Array.isArray(verified?.columns) && Array.isArray(verified?.classes) && verified.classes.length > 0) {
+    // The verification pass's job is only to ADD missed columns, per its own
+    // prompt — never to shrink coverage. A large multi-day timetable can make
+    // this re-generation call truncate, so a verified result with FEWER
+    // classes than the first pass is a sign of truncation, not a correction:
+    // keep the first pass instead of silently losing whole days of data.
+    if (
+      Array.isArray(verified?.columns) && verified.columns.length > 0 &&
+      Array.isArray(verified?.classes) && verified.classes.length >= firstPass.classes.length
+    ) {
       finalPass = verified
     }
   } catch {

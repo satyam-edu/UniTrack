@@ -113,6 +113,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
   const [legendCodes, setLegendCodes]     = useState<Set<string>>(new Set())
   const [isResolving, setIsResolving]     = useState(false)
   const [reviewView, setReviewView]       = useState<'list' | 'grid'>('list')
+  const [showOriginal, setShowOriginal]   = useState(false)
 
   // ── Summary state (shown after import) ───────────────────────────────────
   const [summaryData, setSummaryData] = useState<{
@@ -154,7 +155,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
   }, [onClose, isLoading, editingIndex, step])
 
   useEffect(() => {
-    if (file && file.type.startsWith('image/')) {
+    if (file && (file.type.startsWith('image/') || file.type === 'application/pdf')) {
       const url = URL.createObjectURL(file)
       setPreviewUrl(url)
       return () => URL.revokeObjectURL(url)
@@ -705,7 +706,7 @@ export default function UploadTimetableModal({ onClose }: Props) {
 
                       {file ? (
                         <div className="relative flex flex-col items-center">
-                          {previewUrl ? (
+                          {previewUrl && file.type.startsWith('image/') ? (
                             <img src={previewUrl} alt="Preview" className="w-20 h-20 object-cover rounded-xl shadow-sm border border-slate-200 mb-2.5" />
                           ) : (
                             <div className="w-20 h-20 flex items-center justify-center bg-slate-100 rounded-xl border border-slate-200 mb-2.5">
@@ -791,20 +792,35 @@ export default function UploadTimetableModal({ onClose }: Props) {
                   </div>
                 )}
 
-                {/* List/Grid toggle */}
-                <div className="mx-4 mt-3 flex rounded-xl p-1 bg-slate-100">
-                  {(['list', 'grid'] as const).map((v) => (
+                {/* List/Grid toggle + original source */}
+                <div className="mx-4 mt-3 flex items-center gap-2">
+                  <div className="flex-1 flex rounded-xl p-1 bg-slate-100">
+                    {(['list', 'grid'] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setReviewView(v)}
+                        className="flex-1 py-1.5 rounded-lg text-xs font-bold capitalize cursor-pointer transition-all"
+                        style={reviewView === v
+                          ? { background: 'white', color: '#0f766e', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }
+                          : { color: '#94a3b8' }}
+                      >
+                        {v} view
+                      </button>
+                    ))}
+                  </div>
+                  {previewUrl && (
                     <button
-                      key={v}
-                      onClick={() => setReviewView(v)}
-                      className="flex-1 py-1.5 rounded-lg text-xs font-bold capitalize cursor-pointer transition-all"
-                      style={reviewView === v
-                        ? { background: 'white', color: '#0f766e', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }
-                        : { color: '#94a3b8' }}
+                      onClick={() => setShowOriginal(true)}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                      style={{ background: 'rgba(26,158,160,0.08)', color: '#0f766e', border: '1px solid rgba(26,158,160,0.20)' }}
                     >
-                      {v} view
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      Original
                     </button>
-                  ))}
+                  )}
                 </div>
 
                 {reviewView === 'grid' && (
@@ -1030,6 +1046,39 @@ export default function UploadTimetableModal({ onClose }: Props) {
           </AnimatePresence>
         </motion.div>
       </div>
+
+      {/* Original source lightbox — lets the student cross-check the AI's read against the actual photo/PDF */}
+      <AnimatePresence>
+        {showOriginal && previewUrl && file && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex flex-col bg-black/90"
+            onClick={() => setShowOriginal(false)}
+          >
+            <div className="flex items-center justify-between px-4 py-3 flex-shrink-0">
+              <p className="text-sm font-semibold text-white/80 truncate">{file.name}</p>
+              <button
+                onClick={() => setShowOriginal(false)}
+                aria-label="Close"
+                className="w-9 h-9 flex items-center justify-center rounded-xl text-white/70 hover:text-white hover:bg-white/10 cursor-pointer transition-colors flex-shrink-0"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 px-2 pb-2" onClick={(e) => e.stopPropagation()}>
+              {file.type === 'application/pdf' ? (
+                <iframe src={previewUrl} title="Original timetable PDF" className="w-full h-full rounded-lg bg-white" />
+              ) : (
+                <img src={previewUrl} alt="Original timetable" className="w-full h-full object-contain" />
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Toast */}
       <AnimatePresence>
