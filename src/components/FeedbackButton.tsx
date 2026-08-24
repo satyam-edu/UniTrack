@@ -64,7 +64,7 @@ export default function FeedbackButton() {
     }
   }
 
-  const morphTransition = { type: 'spring' as const, damping: 26, stiffness: 260 }
+  const morphTransition = { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const }
 
   return (
     <>
