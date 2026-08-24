@@ -1,23 +1,45 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 
 const FEEDBACK_EMAIL = 'live.feedback.users@gmail.com'
+const TRIGGER_LAYOUT_ID = 'feedback-trigger'
+
+function FeedbackIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  )
+}
 
 /**
- * Feedback entry point on the Profile page, styled to match the surrounding
- * account-action buttons. Opens a modal that submits to the write-only
- * `feedback` table, with a mailto fallback for anyone who'd rather email
- * directly.
+ * Feedback entry point for the Profile page. A floating pill sits bottom-left
+ * until the reserved slot between the account-action buttons scrolls into
+ * view, at which point it morphs (shared layout transition) into the inline
+ * button occupying that slot. Scrolling back up reverses the morph.
  */
 export default function FeedbackButton() {
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const [inView, setInView] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const el = anchorRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { rootMargin: '0px 0px -15% 0px', threshold: 0.4 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -42,23 +64,60 @@ export default function FeedbackButton() {
     }
   }
 
+  const morphTransition = { type: 'spring' as const, damping: 26, stiffness: 260 }
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl font-bold text-sm cursor-pointer transition-all duration-200 active:scale-95"
-        style={{
-          background: 'rgba(26,158,160,0.08)',
-          border: '1.5px solid rgba(26,158,160,0.20)',
-          color: '#1a9ea0',
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-        </svg>
-        Send Feedback
-      </button>
+      {/* Reserved slot in the account-actions flow; stays empty (and this
+          size) while the floating button hasn't arrived here yet. */}
+      <div ref={anchorRef} className="relative h-14">
+        <AnimatePresence initial={false}>
+          {inView && (
+            <motion.button
+              key="inline"
+              layoutId={TRIGGER_LAYOUT_ID}
+              type="button"
+              onClick={() => setIsOpen(true)}
+              className="absolute inset-0 w-full flex items-center justify-center gap-2.5 font-bold text-sm cursor-pointer"
+              style={{
+                borderRadius: 16,
+                background: 'rgba(26,158,160,0.08)',
+                border: '1.5px solid rgba(26,158,160,0.20)',
+                color: '#1a9ea0',
+              }}
+              transition={morphTransition}
+            >
+              <FeedbackIcon />
+              Send Feedback
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {!inView && (
+          <motion.button
+            key="floating"
+            layoutId={TRIGGER_LAYOUT_ID}
+            type="button"
+            onClick={() => setIsOpen(true)}
+            aria-label="Send feedback"
+            className="fixed z-40 flex items-center justify-center text-white cursor-pointer"
+            style={{
+              bottom: 112,
+              left: 16,
+              width: 56,
+              height: 56,
+              borderRadius: 999,
+              background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+              boxShadow: '0 6px 20px rgba(26,158,160,0.40)',
+            }}
+            transition={morphTransition}
+          >
+            <FeedbackIcon size={20} />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isOpen && (
