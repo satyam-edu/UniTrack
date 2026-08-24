@@ -74,7 +74,7 @@ export default function FeedbackButton() {
     }
   }
 
-  const morphTransition = { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const }
+  const morphTransition = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const }
 
   return (
     <>
