@@ -7,10 +7,12 @@ import { useRouter } from 'next/navigation'
 import { parseTimetableImage } from '@/app/actions/extractTimetable'
 import { saveTimetableToDB } from '@/app/actions/saveTimetable'
 import { resolveSubjectCodes } from '@/app/actions/subjectCatalog'
+import { saveTimetableSource } from '@/app/actions/timetableSource'
 import type { ExtractedClass, SkippedClass } from '@/app/actions/extractTimetable'
 import { supabase } from '@/lib/supabase'
-import { normaliseSubjectCode } from '@/lib/subjectCode'
+import { normaliseSubjectCode, getSubjectBaseCode } from '@/lib/subjectCode'
 import TimetableGrid, { type GridEntry } from '@/components/TimetableGrid'
+import SourceLightbox from '@/components/SourceLightbox'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -300,6 +302,19 @@ export default function UploadTimetableModal({ onClose }: Props) {
 
       const result = await saveTimetableToDB(extractedData, resolvedNames, session.access_token)
       if (result.success) {
+        // Store the original source file so it can be shown back on /timetable
+        // for cross-checking. Best-effort — a failure here doesn't block the import.
+        if (file) {
+          try {
+            const sourceForm = new FormData()
+            sourceForm.append('file', file)
+            sourceForm.append('token', session.access_token)
+            await saveTimetableSource(sourceForm)
+          } catch {
+            // Source upload failed — timetable is still imported.
+          }
+        }
+
         // Persist the user's group choice to DB.
         // This runs after the timetable import so a failure here doesn't block the import.
         if (group) {
@@ -602,6 +617,13 @@ export default function UploadTimetableModal({ onClose }: Props) {
                     const fromCatalog = catalogCodes.has(code)
                     const fromLegend = legendCodes.has(code)
                     const value = resolvedNames[code] ?? ''
+                    // Same subject, different delivery mode (e.g. ITE425T/ITE425P) —
+                    // offer to reuse whichever sibling already has a confirmed name,
+                    // instead of making the student type it twice.
+                    const baseCode = getSubjectBaseCode(code)
+                    const sibling = !value.trim()
+                      ? uniqueCodes.find((c) => c.code !== code && getSubjectBaseCode(c.code) === baseCode && resolvedNames[c.code]?.trim())
+                      : undefined
                     return (
                       <div key={code} className="rounded-2xl border border-slate-100 bg-slate-50 px-3.5 py-3">
                         <div className="flex items-center gap-1.5 mb-1.5">
@@ -633,6 +655,19 @@ export default function UploadTimetableModal({ onClose }: Props) {
                           placeholder="e.g. Data Structures"
                           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
                         />
+                        {sibling && (
+                          <button
+                            type="button"
+                            onClick={() => updateResolvedName(code, resolvedNames[sibling.code]!.trim())}
+                            className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg px-2.5 py-1 cursor-pointer transition-colors"
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                            Same as {sibling.displayCode} — use &quot;{resolvedNames[sibling.code]}&quot;
+                          </button>
+                        )}
                       </div>
                     )
                   })}
@@ -1048,37 +1083,15 @@ export default function UploadTimetableModal({ onClose }: Props) {
       </div>
 
       {/* Original source lightbox — lets the student cross-check the AI's read against the actual photo/PDF */}
-      <AnimatePresence>
-        {showOriginal && previewUrl && file && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] flex flex-col bg-black/90"
-            onClick={() => setShowOriginal(false)}
-          >
-            <div className="flex items-center justify-between px-4 py-3 flex-shrink-0">
-              <p className="text-sm font-semibold text-white/80 truncate">{file.name}</p>
-              <button
-                onClick={() => setShowOriginal(false)}
-                aria-label="Close"
-                className="w-9 h-9 flex items-center justify-center rounded-xl text-white/70 hover:text-white hover:bg-white/10 cursor-pointer transition-colors flex-shrink-0"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 px-2 pb-2" onClick={(e) => e.stopPropagation()}>
-              {file.type === 'application/pdf' ? (
-                <iframe src={previewUrl} title="Original timetable PDF" className="w-full h-full rounded-lg bg-white" />
-              ) : (
-                <img src={previewUrl} alt="Original timetable" className="w-full h-full object-contain" />
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {previewUrl && file && (
+        <SourceLightbox
+          isOpen={showOriginal}
+          onClose={() => setShowOriginal(false)}
+          url={previewUrl}
+          mimeType={file.type}
+          fileName={file.name}
+        />
+      )}
 
       {/* Toast */}
       <AnimatePresence>

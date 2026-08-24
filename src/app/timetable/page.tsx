@@ -11,6 +11,8 @@ import EditClassModal from '@/components/EditClassModal'
 import ScheduleClassModal from '@/components/ScheduleClassModal'
 import UploadTimetableModal from '@/components/UploadTimetableModal'
 import TimetableGrid, { type GridEntry } from '@/components/TimetableGrid'
+import SourceLightbox from '@/components/SourceLightbox'
+import { getTimetableSourceUrl } from '@/app/actions/timetableSource'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +75,8 @@ export default function TimetablePage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [timetableView, setTimetableView] = useState<'list' | 'grid'>('list')
+  const [originalSource, setOriginalSource] = useState<{ url: string; mimeType: string } | null>(null)
+  const [showOriginal, setShowOriginal] = useState(false)
   const actionMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Data loading ─────────────────────────────────────────────────────────────
@@ -103,6 +107,22 @@ export default function TimetablePage() {
   }, [])
 
   useEffect(() => { loadTimetable() }, [loadTimetable])
+
+  // Best-effort: older timetables imported before this feature existed simply
+  // have no stored source, in which case the button stays hidden.
+  useEffect(() => {
+    async function loadSource() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      try {
+        const source = await getTimetableSourceUrl(session.access_token)
+        setOriginalSource(source)
+      } catch {
+        // No stored source, or the lookup failed — button stays hidden.
+      }
+    }
+    loadSource()
+  }, [])
 
   // ── Hydration guard ──────────────────────────────────────────────────────────
   // The timetable page always opens on viewingGroup 'ALL' so the user sees every
@@ -334,20 +354,35 @@ export default function TimetablePage() {
           </div>{/* end flex gap-2 */}
         </div>
 
-        {/* ── List / Grid toggle ────────────────────────────────────────────── */}
-        <div className="flex rounded-2xl p-1.5 mb-4 bg-white border border-slate-200/60">
-          {(['list', 'grid'] as const).map((v) => (
+        {/* ── List / Grid toggle + original source ────────────────────────────── */}
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex-1 flex rounded-2xl p-1.5 bg-white border border-slate-200/60">
+            {(['list', 'grid'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setTimetableView(v)}
+                className="flex-1 py-2 rounded-xl text-sm font-bold capitalize cursor-pointer transition-all"
+                style={timetableView === v
+                  ? { background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', color: 'white', boxShadow: '0 4px 14px rgba(26,158,160,0.30)' }
+                  : { color: '#94a3b8' }}
+              >
+                {v} view
+              </button>
+            ))}
+          </div>
+          {originalSource && (
             <button
-              key={v}
-              onClick={() => setTimetableView(v)}
-              className="flex-1 py-2 rounded-xl text-sm font-bold capitalize cursor-pointer transition-all"
-              style={timetableView === v
-                ? { background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)', color: 'white', boxShadow: '0 4px 14px rgba(26,158,160,0.30)' }
-                : { color: '#94a3b8' }}
+              onClick={() => setShowOriginal(true)}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl text-sm font-bold cursor-pointer transition-colors bg-white border border-slate-200/60"
+              style={{ color: '#0f766e' }}
             >
-              {v} view
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Original
             </button>
-          ))}
+          )}
         </div>
 
         {/* ── Day Selector — list view only; grid view shows the whole week ──── */}
@@ -694,6 +729,16 @@ export default function TimetablePage() {
 
       {isUploadModalOpen && (
         <UploadTimetableModal onClose={() => setIsUploadModalOpen(false)} />
+      )}
+
+      {originalSource && (
+        <SourceLightbox
+          isOpen={showOriginal}
+          onClose={() => setShowOriginal(false)}
+          url={originalSource.url}
+          mimeType={originalSource.mimeType}
+          fileName="Original timetable"
+        />
       )}
 
       {/* ── Help Modal ───────────────────────────────────────────────────────── */}
