@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import PWAProvider from "@/components/PWAProvider";
 import { Plus_Jakarta_Sans } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -46,7 +45,6 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-slate-50">
         <PWAProvider>{children}</PWAProvider>
-        <Analytics />
       </body>
     </html>
   );
