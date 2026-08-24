@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'motion/react'
+import { springSmooth } from '@/lib/motion'
 import { supabase } from '@/lib/supabase'
 
 interface Subject {
@@ -101,7 +102,7 @@ export default function EditSubjectModal({ subject, onClose, onSuccess, existing
         initial={{ opacity: 0, scale: 0.95, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 16 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        transition={springSmooth}
         className="w-full max-w-md bg-white/95 backdrop-blur-xl border border-white shadow-2xl text-slate-800 rounded-3xl overflow-hidden"
       >
         <div className="px-6 pt-5 pb-6">

@@ -129,7 +129,8 @@ export default function DashboardPage() {
       let absent = 0
       let cancelled = 0
       for (const rec of records) {
-        if (rec.status === 'Present') present += pointValue(sub, rec)
+        // Proxy counts toward "present" like Present — see src/app/page.tsx for the rationale.
+        if (rec.status === 'Present' || rec.status === 'Proxy') present += pointValue(sub, rec)
         else if (rec.status === 'Absent') absent += pointValue(sub, rec)
         else if (rec.status === 'Cancelled') cancelled += 1
       }
