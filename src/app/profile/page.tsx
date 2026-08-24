@@ -1043,6 +1043,11 @@ export default function ProfilePage() {
           </button>
         </div>
 
+        {/* ── Feedback ─────────────────────────────────────────────────────── */}
+        <div className="mt-3">
+          <FeedbackButton />
+        </div>
+
         {/* ── Delete Account ───────────────────────────────────────────────── */}
         <div className="mt-8 mb-4">
           <button
@@ -1089,7 +1094,6 @@ export default function ProfilePage() {
         </div>
       </motion.main>
 
-      <FeedbackButton />
       <BottomNav />
 
       {/* Delete Account Modal */}

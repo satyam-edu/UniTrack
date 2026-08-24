@@ -1,34 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 
 const FEEDBACK_EMAIL = 'live.feedback.users@gmail.com'
 
 /**
- * Floating feedback entry point for the Profile page. Starts icon-only,
- * morphs into a labelled pill once the user has scrolled a bit (so it
- * doesn't compete with the page header, but stays discoverable while
- * reading further down). Submits to the write-only `feedback` table, with
- * a mailto fallback for anyone who'd rather email directly.
+ * Feedback entry point on the Profile page, styled to match the surrounding
+ * account-action buttons. Opens a modal that submits to the write-only
+ * `feedback` table, with a mailto fallback for anyone who'd rather email
+ * directly.
  */
 export default function FeedbackButton() {
-  const [morphed, setMorphed] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    function onScroll() {
-      setMorphed(window.scrollY > 120)
-    }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    onScroll()
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -55,38 +44,21 @@ export default function FeedbackButton() {
 
   return (
     <>
-      <motion.button
-        layout
+      <button
+        type="button"
         onClick={() => setIsOpen(true)}
-        aria-label="Send feedback"
-        className="fixed z-40 flex items-center gap-2 text-white font-bold cursor-pointer overflow-hidden"
+        className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl font-bold text-sm cursor-pointer transition-all duration-200 active:scale-95"
         style={{
-          bottom: '112px',
-          right: '16px',
-          borderRadius: 999,
-          background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
-          boxShadow: '0 6px 20px rgba(26,158,160,0.40)',
+          background: 'rgba(26,158,160,0.08)',
+          border: '1.5px solid rgba(26,158,160,0.20)',
+          color: '#1a9ea0',
         }}
-        animate={{ padding: morphed ? '12px 18px 12px 14px' : '12px' }}
-        transition={{ type: 'spring', damping: 22, stiffness: 260 }}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
         </svg>
-        <AnimatePresence initial={false}>
-          {morphed && (
-            <motion.span
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: 'auto' }}
-              exit={{ opacity: 0, width: 0 }}
-              transition={{ duration: 0.18 }}
-              className="text-sm whitespace-nowrap"
-            >
-              Feedback
-            </motion.span>
-          )}
-        </AnimatePresence>
-      </motion.button>
+        Send Feedback
+      </button>
 
       <AnimatePresence>
         {isOpen && (
