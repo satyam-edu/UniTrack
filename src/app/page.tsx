@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { springSmooth, springSnappy, fadeSlide } from '@/lib/motion'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -50,7 +51,7 @@ interface AttendanceRecord {
   timetable_id: string
   subject_id: string
   date: string
-  status: 'Present' | 'Absent' | 'Cancelled'
+  status: 'Present' | 'Absent' | 'Cancelled' | 'Proxy'
 }
 
 interface SlotWithAttendance extends TimetableSlot {
@@ -83,7 +84,7 @@ const pageVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] },
+    transition: fadeSlide,
   },
 }
 
@@ -93,7 +94,7 @@ const attendanceCardVariants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: 'spring' as const, damping: 25, delay: 0.04 },
+    transition: { ...springSmooth, delay: 0.04 },
   },
 }
 
@@ -102,7 +103,7 @@ const calendarVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { type: 'spring' as const, damping: 25, stiffness: 300, delay: 0.08 },
+    transition: { ...springSmooth, delay: 0.08 },
   },
 }
 
@@ -126,6 +127,7 @@ export default function HomePage() {
   const [globalTotal, setGlobalTotal] = useState(0)
   const [presentCount, setPresentCount] = useState(0)
   const [absentCount, setAbsentCount] = useState(0)
+  const [proxyCount, setProxyCount] = useState(0)
   const [scheduleOpen, setScheduleOpen] = useState(true)
 
   const [allTimetable, setAllTimetable] = useState<TimetableSlot[]>([])
@@ -186,20 +188,23 @@ export default function HomePage() {
   useEffect(() => {
     if (!user || allTimetable.length === 0 || allAttendance.length === 0) {
       setGlobalAttended(0); setGlobalTotal(0)
-      setPresentCount(0); setAbsentCount(0)
+      setPresentCount(0); setAbsentCount(0); setProxyCount(0)
       return
     }
-    let attendedVal = 0, totalVal = 0, pres = 0, abs = 0
+    let attendedVal = 0, totalVal = 0, pres = 0, abs = 0, proxy = 0
     allAttendance.forEach((record) => {
       const slot = allTimetable.find((s) => s.id === record.timetable_id)
       if (!slot) return
       const mode = slot.subject.type === 'Theory' ? user.theory_mode : user.lab_mode
       const pv = mode === 'hour' ? getHoursDiff(slot.start_time, slot.end_time) : 1
+      // Proxy counts toward the percentage like Present (tracked separately below
+      // so the student can still see how many classes leaned on a proxy).
       if (record.status === 'Present') { attendedVal += pv; totalVal += pv; pres++ }
+      else if (record.status === 'Proxy') { attendedVal += pv; totalVal += pv; proxy++ }
       else if (record.status === 'Absent') { totalVal += pv; abs++ }
     })
     setGlobalAttended(attendedVal); setGlobalTotal(totalVal)
-    setPresentCount(pres); setAbsentCount(abs)
+    setPresentCount(pres); setAbsentCount(abs); setProxyCount(proxy)
   }, [user, allTimetable, allAttendance])
 
   // 3. Daily schedule
@@ -226,7 +231,7 @@ export default function HomePage() {
   }, [selectedDate, allTimetable, allAttendance, user, primaryGroup])
 
   // 4. Optimistic attendance marking
-  async function handleMarkAttendance(slot: SlotWithAttendance, status: 'Present' | 'Absent' | 'Cancelled') {
+  async function handleMarkAttendance(slot: SlotWithAttendance, status: 'Present' | 'Absent' | 'Cancelled' | 'Proxy') {
     if (!user) return
     const dateStr = format(selectedDate, 'yyyy-MM-dd')
     const existingRecord = slot.attendanceRecord
@@ -443,12 +448,17 @@ export default function HomePage() {
               </div>
 
               {/* Target row */}
-              <div className="flex items-center gap-1.5 opacity-90">
+              <div className="flex items-center gap-1.5 opacity-90 flex-wrap">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300">
                   <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
                   <polyline points="17 6 23 6 23 12" />
                 </svg>
                 <span className="text-xs font-semibold">Target: {target}%</span>
+                {proxyCount > 0 && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full ml-1" style={{ background: 'rgba(255,255,255,0.20)' }}>
+                    {proxyCount} via proxy
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -593,7 +603,7 @@ export default function HomePage() {
               </span>
               <motion.div
                 animate={{ rotate: scheduleOpen ? 0 : -90 }}
-                transition={{ type: 'spring' as const, damping: 22, stiffness: 220 }}
+                transition={springSnappy}
                 className="text-text-muted group-hover:text-accent transition-colors"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -682,7 +692,7 @@ export default function HomePage() {
                   ? { height: 'auto', opacity: 1 }
                   : { height: 0, opacity: 0 }
                 }
-                transition={{ duration: 0.2 }}
+                transition={fadeSlide}
                 style={{ overflow: 'hidden' }}
               >
                 <div className="space-y-3 pb-0.5">
@@ -697,12 +707,14 @@ export default function HomePage() {
                     const cardBorder =
                       status === 'Present' ? 'rgba(34, 197, 94,  0.45)' :
                         status === 'Absent' ? 'rgba(239, 68, 68,  0.40)' :
+                          status === 'Proxy' ? 'rgba(168, 85, 247,  0.40)' :
                           status === 'Cancelled' ? 'rgba(100,116,139,  0.25)' :
                             'rgba(255,255,255,  0.55)'
 
                     const cardBg =
                       status === 'Present' ? 'rgba(34, 197, 94,  0.08)' :
                         status === 'Absent' ? 'rgba(239, 68, 68,  0.07)' :
+                          status === 'Proxy' ? 'rgba(168, 85, 247,  0.07)' :
                           status === 'Cancelled' ? 'rgba(100,116,139,  0.05)' :
                             'rgba(255,255,255,  0.78)'
 
@@ -711,12 +723,13 @@ export default function HomePage() {
                         key={slot.id}
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: status === 'Cancelled' ? 0.6 : 1, y: 0 }}
-                        transition={{ delay: i * 0.06, type: 'spring' as const, damping: 25 }}
+                        transition={{ ...springSmooth, delay: i * 0.06 }}
                         className="rounded-3xl overflow-hidden bg-white border border-slate-200/60"
                         style={{
                           borderLeft:
                             status === 'Present'   ? '4px solid #22c55e' :
                             status === 'Absent'    ? '4px solid #ef4444' :
+                            status === 'Proxy'     ? '4px solid #a855f7' :
                             status === 'Cancelled' ? '4px solid #cbd5e1' :
                             '4px solid #e2e8f0',
                         }}
@@ -794,19 +807,20 @@ export default function HomePage() {
 
                         {/* Action row */}
                         <div
-                          className={`mx-3 mb-3 rounded-2xl p-1 grid grid-cols-3 gap-1 ${isFutureDate ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
+                          className={`mx-3 mb-3 rounded-2xl p-1 grid grid-cols-4 gap-1 ${isFutureDate ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                           style={{ background: '#f8fafc', border: `1px solid ${isAmbiguous ? 'rgba(239,68,68,0.25)' : '#e2e8f0'}` }}
                         >
                           {(
                             [
                               { label: 'Present', value: 'Present' as const, activeColor: '#16a34a', activeShadow: 'rgba(22,163,74,0.28)' },
                               { label: 'Absent', value: 'Absent' as const, activeColor: '#dc2626', activeShadow: 'rgba(220,38,38,0.28)' },
+                              { label: 'Proxy', value: 'Proxy' as const, activeColor: '#9333ea', activeShadow: 'rgba(147,51,234,0.28)' },
                               { label: 'Cancelled', value: 'Cancelled' as const, activeColor: '#475569', activeShadow: 'rgba(71,85,105,0.20)' },
                             ] as const
                           ).map(({ label, value, activeColor, activeShadow }) => {
                             const isActive = status === value
-                            // Present/Absent are locked for ambiguous (overlapping, no-group) slots
-                            // to prevent attendance percentage corruption.
+                            // Present/Absent/Proxy are locked for ambiguous (overlapping, no-group)
+                            // slots to prevent attendance percentage corruption.
                             // Cancelled is always allowed — it doesn't count toward the percentage.
                             const isLocked = isAmbiguous && value !== 'Cancelled'
                             return (
