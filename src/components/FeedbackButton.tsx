@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { supabase } from '@/lib/supabase'
 
@@ -29,6 +30,15 @@ export default function FeedbackButton() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [mounted, setMounted] = useState(false)
+
+  // The floating trigger and the modal both use position:fixed, which needs
+  // to escape this component's DOM ancestors (motion.main sets a permanent
+  // `willChange: transform`, which — like an active transform — creates a
+  // CSS containing block that traps position:fixed descendants inside its
+  // own box instead of the viewport). Portaling to document.body sidesteps
+  // that regardless of what any ancestor does with transforms.
+  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     const el = anchorRef.current
@@ -94,88 +104,94 @@ export default function FeedbackButton() {
         </AnimatePresence>
       </div>
 
-      <AnimatePresence initial={false}>
-        {!inView && (
-          <motion.button
-            key="floating"
-            layoutId={TRIGGER_LAYOUT_ID}
-            type="button"
-            onClick={() => setIsOpen(true)}
-            aria-label="Send feedback"
-            className="fixed z-40 flex items-center justify-center text-white cursor-pointer"
-            style={{
-              bottom: 112,
-              left: 16,
-              width: 56,
-              height: 56,
-              borderRadius: 999,
-              background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
-              boxShadow: '0 6px 20px rgba(26,158,160,0.40)',
-            }}
-            transition={morphTransition}
-          >
-            <FeedbackIcon size={20} />
-          </motion.button>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-            onClick={() => setIsOpen(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 40 }}
-              transition={{ type: 'spring', damping: 26, stiffness: 300 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl"
+      {mounted && createPortal(
+        <AnimatePresence initial={false}>
+          {!inView && (
+            <motion.button
+              key="floating"
+              layoutId={TRIGGER_LAYOUT_ID}
+              type="button"
+              onClick={() => setIsOpen(true)}
+              aria-label="Send feedback"
+              className="fixed z-40 flex items-center justify-center text-white cursor-pointer"
+              style={{
+                bottom: 112,
+                left: 16,
+                width: 56,
+                height: 56,
+                borderRadius: 999,
+                background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)',
+                boxShadow: '0 6px 20px rgba(26,158,160,0.40)',
+              }}
+              transition={morphTransition}
             >
-              {submitted ? (
-                <div className="text-center py-4">
-                  <p className="text-2xl mb-2">🙏</p>
-                  <p className="font-bold text-slate-800">Thanks for the feedback!</p>
-                </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-slate-900">Send Feedback</h3>
-                    <button type="button" onClick={() => setIsOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                      ✕
-                    </button>
+              <FeedbackIcon size={20} />
+            </motion.button>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+
+      {mounted && createPortal(
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+              onClick={() => setIsOpen(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 40 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl"
+              >
+                {submitted ? (
+                  <div className="text-center py-4">
+                    <p className="text-2xl mb-2">🙏</p>
+                    <p className="font-bold text-slate-800">Thanks for the feedback!</p>
                   </div>
-                  {error && <p className="text-sm text-red-600">{error}</p>}
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="What's working, what's not — tell us anything."
-                    rows={4}
-                    required
-                    autoFocus
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 resize-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={submitting || !message.trim()}
-                    className="w-full py-3 rounded-xl font-bold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                    style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)' }}
-                  >
-                    {submitting ? 'Sending…' : 'Send'}
-                  </button>
-                  <p className="text-center text-xs text-slate-400">
-                    Prefer email? <a href={`mailto:${FEEDBACK_EMAIL}`} className="text-accent font-semibold hover:underline">Write to us</a> instead.
-                  </p>
-                </form>
-              )}
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-bold text-slate-900">Send Feedback</h3>
+                      <button type="button" onClick={() => setIsOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                        ✕
+                      </button>
+                    </div>
+                    {error && <p className="text-sm text-red-600">{error}</p>}
+                    <textarea
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder="What's working, what's not — tell us anything."
+                      rows={4}
+                      required
+                      autoFocus
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 resize-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={submitting || !message.trim()}
+                      className="w-full py-3 rounded-xl font-bold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      style={{ background: 'linear-gradient(135deg, #1a9ea0 0%, #0d7c80 100%)' }}
+                    >
+                      {submitting ? 'Sending…' : 'Send'}
+                    </button>
+                    <p className="text-center text-xs text-slate-400">
+                      Prefer email? <a href={`mailto:${FEEDBACK_EMAIL}`} className="text-accent font-semibold hover:underline">Write to us</a> instead.
+                    </p>
+                  </form>
+                )}
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   )
 }
