@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { springSmooth, springSnappy, fadeSlide } from '@/lib/motion'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -133,7 +132,7 @@ function GridSubjectModal({
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
-        transition={springSmooth}
+        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
         className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200/60 overflow-hidden"
         style={{ maxHeight: '90vh' }}
         onClick={e => e.stopPropagation()}
@@ -254,14 +253,13 @@ export default function SubjectsPage() {
 
     const enriched: Subject[] = subjectsData.map((sub) => {
       const records = (attendance || []).filter((a: any) => a.subject_id === sub.id)
-      // Proxy counts toward "present" like Present — see src/app/page.tsx for the rationale.
-      const present  = records.filter((r: any) => r.status === 'Present' || r.status === 'Proxy').length
+      const present  = records.filter((r: any) => r.status === 'Present').length
       const absent   = records.filter((r: any) => r.status === 'Absent').length
       const total    = present + absent
       const percentage = total > 0 ? (present / total) * 100 : 0
 
       const recentDates = records
-        .filter((r: any) => (r.status === 'Present' || r.status === 'Proxy') && r.date)
+        .filter((r: any) => r.status === 'Present' && r.date)
         .map((r: any) => r.date as string)
         .sort((a, b) => b.localeCompare(a))
         .slice(0, 10)
@@ -341,7 +339,7 @@ export default function SubjectsPage() {
       <motion.main
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={fadeSlide}
+        transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as [number,number,number,number] }}
         className="flex-1 flex flex-col px-4 py-6 pb-32 max-w-lg mx-auto w-full"
       >
         {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -361,7 +359,7 @@ export default function SubjectsPage() {
               key={label}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ ...springSmooth, delay: i * 0.06 }}
+              transition={{ delay: i * 0.06, type: 'spring' as const, damping: 25 }}
               className="rounded-3xl p-4 flex flex-col items-center justify-center bg-white border border-slate-200/60"
             >
               <span className="text-2xl font-bold text-teal-500">{value}</span>
@@ -408,7 +406,7 @@ export default function SubjectsPage() {
                   key={subject.id}
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ ...springSmooth, delay: i * 0.05 }}
+                  transition={{ delay: i * 0.05, type: 'spring' as const, damping: 25 }}
                   className="rounded-3xl overflow-hidden bg-white border border-slate-200/60 cursor-pointer active:scale-[0.99] transition-transform"
                   style={{ borderColor: isExpanded ? 'rgba(20,184,166,0.35)' : undefined }}
                   onClick={() => setExpandedId(isExpanded ? null : subject.id)}
@@ -445,7 +443,7 @@ export default function SubjectsPage() {
                       </span>
                       <motion.div
                         animate={{ rotate: isExpanded ? 90 : 0 }}
-                        transition={springSnappy}
+                        transition={{ type: 'spring' as const, damping: 22, stiffness: 260 }}
                         className="text-slate-400"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -463,7 +461,7 @@ export default function SubjectsPage() {
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        transition={fadeSlide}
+                        transition={{ duration: 0.2 }}
                         style={{ overflow: 'hidden' }}
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -526,7 +524,7 @@ export default function SubjectsPage() {
                   key={subject.id}
                   initial={{ opacity: 0, scale: 0.96 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  transition={{ ...springSmooth, delay: i * 0.04 }}
+                  transition={{ delay: i * 0.04, type: 'spring' as const, damping: 25 }}
                   className="rounded-3xl p-4 bg-white border border-slate-200/60 cursor-pointer active:scale-[0.97] transition-transform flex flex-col gap-3"
                   onClick={() => setGridSelected(subject)}
                 >
