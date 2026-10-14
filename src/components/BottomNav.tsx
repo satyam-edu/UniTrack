@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect } from 'react'
+import { motion } from 'motion/react'
 
 const navItems = [
   {
@@ -48,27 +50,49 @@ const navItems = [
   },
 ]
 
+// Nav remounts on every page change, so remember the last tab to slide the pill from it.
+let prevIndex: number | null = null
+
 export default function BottomNav() {
   const pathname = usePathname()
+  const activeIndex = navItems.findIndex((item) =>
+    item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+  )
+
+  useEffect(() => {
+    if (activeIndex >= 0) prevIndex = activeIndex
+  }, [activeIndex])
 
   return (
     <nav className="fixed bottom-4 z-50 w-[calc(100%-2rem)] max-w-md mx-auto left-0 right-0">
       <div
-        className="flex justify-between items-center w-full px-6 py-2.5 rounded-3xl bg-white/95 backdrop-blur-md border border-slate-200/60"
+        className="relative grid grid-cols-4 items-center w-full px-3 py-2.5 rounded-3xl bg-white/95 backdrop-blur-md border border-slate-200/60"
         style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}
       >
-        {navItems.map((item) => {
-          const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+        {activeIndex >= 0 && (
+          <div className="absolute inset-x-3 inset-y-2.5 pointer-events-none">
+            <motion.div
+              className="h-full w-1/4 px-1"
+              initial={{ x: `${(prevIndex ?? activeIndex) * 100}%` }}
+              animate={{ x: `${activeIndex * 100}%` }}
+              transition={{ type: 'spring', stiffness: 260, damping: 24, mass: 0.9 }}
+            >
+              <div
+                className="h-full w-full rounded-2xl bg-teal-500"
+                style={{ boxShadow: '0 4px 14px rgba(20,184,166,0.30)' }}
+              />
+            </motion.div>
+          </div>
+        )}
+        {navItems.map((item, i) => {
+          const isActive = i === activeIndex
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 ${
-                isActive
-                  ? 'bg-teal-500 text-white'
-                  : 'text-slate-400 hover:text-teal-500'
+              className={`relative flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-2xl transition-colors duration-300 ${
+                isActive ? 'text-white' : 'text-slate-400 hover:text-teal-500'
               }`}
-              style={isActive ? { boxShadow: '0 4px 14px rgba(20,184,166,0.30)' } : undefined}
             >
               {item.icon(isActive)}
               <span className={`text-[10px] leading-none font-bold ${isActive ? 'text-white' : 'text-slate-400'}`}>
