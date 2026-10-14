@@ -11,7 +11,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "UniTrack — Student Attendance Tracker",
+  title: "UniTrack",
   description:
     "Track your attendance, manage subjects, and never miss a class again.",
   manifest: "/manifest.json",

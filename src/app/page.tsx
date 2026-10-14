@@ -353,26 +353,16 @@ export default function HomePage() {
       >
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-end justify-between mb-6">
           <div>
             <p className="text-sm text-text-muted font-medium">Welcome back,</p>
             <h1 className="text-3xl font-extrabold tracking-tight text-foreground leading-tight">
               {user?.name ? user.name.split(' ')[0] : 'Student'}
             </h1>
           </div>
-          <div
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
-            style={{
-              background: 'rgba(255,255,255,0.55)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              borderColor: 'rgba(255,255,255,0.60)',
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-              <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-            </svg>
-            <span className="text-xs font-semibold text-foreground">UniTrack</span>
+          <div className="px-3 py-1.5 mb-1 rounded-xl border border-slate-200/60 bg-white/55 backdrop-blur-md">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/unitrack-text-logo.webp" alt="UniTrack" className="h-5 w-auto" />
           </div>
         </div>
 
